@@ -280,13 +280,15 @@ export function Story() {
         </PillButton>
       }
     >
-      <div className="fill" ref={wrapRef}>
-        <canvas className="fill" ref={canvasRef} />
+      <div className="st-stage" ref={wrapRef}>
         <div className="st-cap" key={beat}>
           <span>
             {String(beat + 1).padStart(2, '0')} / 08 · {BEATS[beat]}
           </span>
           <p>{CAPTIONS[beat]}</p>
+        </div>
+        <div className="st-canvas">
+          <canvas className="fill" ref={canvasRef} />
         </div>
         <div className="st-timeline">
           <span>From a simple idea</span>

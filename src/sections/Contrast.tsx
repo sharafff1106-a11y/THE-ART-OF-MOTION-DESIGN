@@ -18,13 +18,13 @@ const COLORS = ['#ffe23f', '#ff3fa4', '#2fd3ff', '#7cff4f', '#ff5a1f', '#ffffff'
 
 export function Contrast() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [clarity, setClarity] = useState(0.15);
+  const [clarity, setClarity] = useState(0.3);
   const [cut, setCut] = useState<'none' | 'name' | 'principle'>('none');
-  const target = useRef(0.15);
+  const target = useRef(0.3);
   target.current = clarity;
   const sim = useRef({
-    c: 0.15,
-    stickers: Array.from({ length: 16 }, (_, i) => ({
+    c: 0.3,
+    stickers: Array.from({ length: 9 }, (_, i) => ({
       x: Math.random(),
       y: Math.random(),
       r: rand(-0.5, 0.5),
@@ -33,7 +33,7 @@ export function Contrast() {
       col: COLORS[i % COLORS.length],
       ph: Math.random() * 6,
     })),
-    confetti: Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), v: rand(0.1, 0.4), r: Math.random() * 6, col: COLORS[Math.floor(Math.random() * COLORS.length)] })),
+    confetti: Array.from({ length: 28 }, () => ({ x: Math.random(), y: Math.random(), v: rand(0.1, 0.4), r: Math.random() * 6, col: COLORS[Math.floor(Math.random() * COLORS.length)] })),
   });
 
   useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
@@ -48,8 +48,8 @@ export function Contrast() {
     ctx.fillRect(0, 0, w, h);
     if (chaos > 0.02) {
       for (let i = 0; i < 6; i++) {
-        ctx.globalAlpha = chaos * (0.25 + 0.25 * Math.sin(time * 9 + i * 2));
-        ctx.fillStyle = COLORS[(i + Math.floor(time * 4)) % COLORS.length];
+        ctx.globalAlpha = chaos * (0.12 + 0.08 * Math.sin(time * 3 + i * 2));
+        ctx.fillStyle = COLORS[(i + Math.floor(time * 1.5)) % COLORS.length];
         ctx.fillRect((i / 6) * w, 0, w / 6 + 1, h);
       }
     }
@@ -87,7 +87,7 @@ export function Contrast() {
     ctx.textBaseline = 'middle';
     const nameY = h * 0.7;
     if (chaos > 0.05) {
-      for (let k = 0; k < 3; k++) {
+      for (let k = 0; k < 2; k++) {
         ctx.save();
         ctx.globalAlpha = chaos * 0.8;
         ctx.translate(w / 2 + Math.sin(time * 15 + k) * 14 * chaos, nameY + Math.cos(time * 12 + k) * 8 * chaos);
@@ -119,7 +119,7 @@ export function Contrast() {
     // stickers shouting over everything
     if (chaos > 0.02) {
       for (const st of s.stickers) {
-        const pulse = 1 + Math.sin(time * 10 + st.ph) * 0.12;
+        const pulse = 1 + Math.sin(time * 5 + st.ph) * 0.08;
         ctx.save();
         ctx.globalAlpha = chaos;
         ctx.translate(st.x * w, st.y * h);
@@ -153,7 +153,7 @@ export function Contrast() {
     const o = { c: clarity };
     gsap
       .timeline()
-      .call(() => audio.air(0.9, 0.85))
+      .call(() => audio.air(0.3, 0.45))
       .to(o, { c: 0, duration: 0.5, ease: 'power2.in', onUpdate: () => setClarity(o.c) })
       .call(() => {
         audio.air(0);

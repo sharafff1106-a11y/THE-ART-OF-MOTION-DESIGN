@@ -20,6 +20,13 @@ const GHOSTS = 9;
 
 const linear = TIMING[0];
 const CHOICES = TIMING.slice(1);
+/** plain-language explanations for clients */
+const EXPLAIN: Record<string, { what: string; seen: string }> = {
+  eased: { what: 'It speeds up gently, then slows down before it stops. Nothing in the real world starts or stops instantly.', seen: 'Premium UI, product shots, most logo animations.' },
+  anticipation: { what: 'It pulls back a little before the main move, like bending your knees before a jump. The small move prepares you for the big one.', seen: 'Logo reveals, buttons, character animation.' },
+  overshoot: { what: 'It moves past the target and comes back. It feels energetic and confident.', seen: 'App icons, notifications, playful brands.' },
+  settle: { what: 'It arrives, then wobbles to rest like a real object losing its energy.', seen: 'Product drops, cards landing, 3D packshots.' },
+};
 const CAPTIONS: Record<string, string> = {
   linear: 'Mechanical. Robotic. Lifeless.',
   eased: 'Natural. Calm. Considered.',
@@ -124,7 +131,11 @@ export function Timing() {
       theme="dark"
       question="How should it feel?"
       headline={['Same', 'movement.', 'Different', 'feeling.']}
-      body={<p>Both balls travel the same distance in the same time. Only the timing differs.</p>}
+      body={
+        <p>
+          Watch both balls. They start together and arrive together. The only difference is how they use that time, and it completely changes how they feel.
+        </p>
+      }
       forYou={{
         text: 'Timing is where personality comes from. The same logo or product shot can feel cheap, calm, premium or energetic depending on how it accelerates and stops.',
         uses: ['Logo reveals', 'UI transitions', 'Product shots'],
@@ -151,6 +162,9 @@ export function Timing() {
           <canvas ref={rightRef} />
           <p className="tm-box-caption">{CAPTIONS[choice]}</p>
         </figure>
+        <p className="tm-legend">
+          <i /> Each faded ball is one frame. Close together means slow, far apart means fast. The small graph shows speed over time.
+        </p>
         <div className="tm-choose">
           <Segment
             boxed
@@ -163,6 +177,14 @@ export function Timing() {
               arm.current = clock.current + CYCLE;
             }}
           />
+          <div className="tm-explain" key={choice}>
+            <p>
+              <b>What it is.</b> {EXPLAIN[choice].what}
+            </p>
+            <p>
+              <b>Where you've seen it.</b> {EXPLAIN[choice].seen}
+            </p>
+          </div>
         </div>
       </div>
     </Panel>

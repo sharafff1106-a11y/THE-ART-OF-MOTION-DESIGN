@@ -16,7 +16,8 @@ export function Lazy3D<P extends object>({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const near = useInView(ref, { rootMargin: '100% 0px', once: true });
+  // mounted only near the viewport, so at most one WebGL context lives at a time
+  const near = useInView(ref, { rootMargin: '100% 0px' });
   const active = useInView(ref, { rootMargin: '40px 0px' });
   return (
     <div ref={ref} className={className}>

@@ -26,6 +26,13 @@ export function Weight() {
     setMass(m);
     massRef.current = m;
   };
+  const DESCRIBE: Record<string, string> = {
+    feather: 'Floats and drifts. Almost no sound, no impact.',
+    light: 'Moves fast, bounces high, lands with a small click.',
+    medium: 'Feels like a real object in your hand.',
+    heavy: 'Slow to start, hard to stop. A deep thud when it lands.',
+    massive: 'Barely moves, then shakes the whole floor when it lands.',
+  };
   const nearest = LEVELS.reduce((a, b) => (Math.abs(b.m - mass) < Math.abs(a.m - mass) ? b : a));
 
   return (
@@ -34,14 +41,15 @@ export function Weight() {
       num="04"
       title="Weight"
       theme="paper"
-      className="panel--small-h"
       question="Is it believable?"
-      headline={['Motion has weight.', 'Weight creates believability.', 'Believability creates emotion.']}
+      headline={['Heavy or light?', 'You can feel it.']}
       forYou={{
         text: 'Heavy things move slowly and land hard; light things float and bounce. Getting weight right is what makes a product feel solid, premium and real on screen.',
         uses: ['Product launches', '3D packshots', 'Logo animation'],
       }}
       body={
+        <>
+        <p>The cube never changes size. Pick a weight and throw it: you read its weight from how it moves and sounds.</p>
         <RadioList
           rail
           options={LEVELS.map((l) => ({ id: l.id, label: l.label }))}
@@ -51,6 +59,10 @@ export function Weight() {
             dropRef.current++;
           }}
         />
+        <p className="wt-desc" key={nearest.id}>
+          <b>{nearest.label}.</b> {DESCRIBE[nearest.id]}
+        </p>
+        </>
       }
       actions={<PillButton onClick={() => dropRef.current++}>Drop it</PillButton>}
     >
