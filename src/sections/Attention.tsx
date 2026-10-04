@@ -1,233 +1,199 @@
 import { useRef, useState } from 'react';
+import gsap from 'gsap';
 import { audio } from '../audio/engine';
-import { Chapter } from '../components/Chapter';
-import { Slider } from '../components/Controls';
-import { Reveal, Split } from '../components/Typography';
-import { ENV } from '../motion/environments';
-import { easeInOutCubic } from '../motion/easing';
-import { useCanvasLoop } from '../motion/hooks';
-import { clamp, damp, lerp, rand, smoothstep } from '../motion/math';
-import { pointer } from '../motion/pointer';
+import { PillButton, Slider, Toggle, TryPanel, TryRow } from '../components/Controls';
+import { Panel } from '../components/Panel';
+import { useCanvasLoop, useLocalPointer } from '../motion/hooks';
+import { damp, lerp } from '../motion/math';
+import { drawSphere } from '../motion/sprites';
 
 /**
- * 01 — ATTENTION
- *
- * Hundreds of identical particles. One of them is not different in size or
- * colour — only in behaviour. It moves with intent. The eye finds it anyway.
+ * 02 — ATTENTION
+ * A flock of spheres travels a loop in depth. One orange sphere leads with
+ * intent. Focus quiets everything else; attraction lets the visitor steal
+ * the attention with their own cursor.
  */
-const C = ENV.paper;
-
-interface P {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  a: number;
-}
-
-const describe = (f: number) =>
-  f < 0.2 ? 'Everything moves. Nothing leads.' : f < 0.7 ? 'One thing moves with intent.' : 'Everything else waits.';
+const FLOW = 64;
+const DUST = 46;
 
 export function Attention() {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [focus, setFocus] = useState(0.45);
-  const focusTarget = useRef(0.45);
-  const stageRef = useRef(0);
+  const ptr = useLocalPointer(wrapRef);
+  const [noise, setNoise] = useState(false);
+  const [speed, setSpeed] = useState(0.45);
+  const [focus, setFocus] = useState(0.55);
+  const [attract, setAttract] = useState(0.25);
+  const params = useRef({ noise: 0, speed: 0.45, focus: 0.55, attract: 0.25 });
+  params.current.speed = speed;
+  params.current.focus = focus;
+  params.current.attract = attract;
 
   const sim = useRef({
-    ps: [] as P[],
-    w: 0,
-    h: 0,
-    f: 0.45,
-    // the purposeful one
-    from: { x: 0, y: 0 },
-    to: { x: 0, y: 0 },
-    t: 1,
-    dur: 2,
-    curve: 0,
+    t: 0,
+    lead: 0,
+    leadV: 0,
+    noiseAmt: 0,
+    f: 0.55,
+    lastFront: 0,
+    dust: Array.from({ length: DUST }, () => ({ x: Math.random(), y: Math.random(), r: 1 + Math.random() * 2.4, a: Math.random() * 6.28 })),
+    flow: Array.from({ length: FLOW }, (_, i) => ({ o: i / FLOW + Math.random() * 0.01, s: 0.5 + Math.random() * 0.9, jx: 0, jy: 0, px: 0, py: 0, init: false })),
     trail: [] as { x: number; y: number }[],
-    sx: 0,
-    sy: 0,
   });
 
   useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = sim.current;
-    if (s.w !== w || s.h !== h) {
-      const n = Math.round(clamp((w * h) / 1900, 240, 720));
-      s.ps = Array.from({ length: n }, () => ({ x: rand(0, w), y: rand(0, h), vx: 0, vy: 0, a: rand(0, Math.PI * 2) }));
-      s.w = w;
-      s.h = h;
-      s.from = { x: w * 0.3, y: h * 0.5 };
-      s.to = { ...s.from };
-      s.sx = s.from.x;
-      s.sy = s.from.y;
-      s.t = 1;
-    }
-    s.f = damp(s.f, focusTarget.current, 5, dt);
-    const f = s.f;
+    const P = params.current;
+    s.noiseAmt = damp(s.noiseAmt, noise ? 1 : 0, 4, dt);
+    s.f = damp(s.f, P.focus, 5, dt);
+    s.t += dt * lerp(0.02, 0.16, P.speed);
 
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const px = pointer.x - rect.left;
-    const py = pointer.y - rect.top;
-    const R = 150;
+    // the leader moves with intent: it surges and rests
+    const surge = 0.5 + 0.5 * Math.sin(time * 1.3);
+    s.leadV = lerp(0.04, 0.3, P.speed) * (0.35 + surge * 1.1);
+    s.lead += dt * s.leadV;
 
-    // ── the field: slow, aimless wandering. Focus quiets it.
-    const fieldSpeed = lerp(24, 2.5, smoothstep(0, 1, f));
-    const turn = lerp(2.6, 0.6, f);
-    for (const p of s.ps) {
-      p.a += (Math.random() - 0.5) * turn * dt * 6;
-      p.vx = damp(p.vx, Math.cos(p.a) * fieldSpeed, 2, dt);
-      p.vy = damp(p.vy, Math.sin(p.a) * fieldSpeed, 2, dt);
-      const dx = p.x - px;
-      const dy = p.y - py;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < R * R && d2 > 1) {
-        const d = Math.sqrt(d2);
-        const push = Math.pow(1 - d / R, 2) * 1400 * dt;
-        p.vx += (dx / d) * push - (dy / d) * push * 0.35;
-        p.vy += (dy / d) * push + (dx / d) * push * 0.35;
-      }
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.x < -4) p.x += w + 8;
-      if (p.x > w + 4) p.x -= w + 8;
-      if (p.y < -4) p.y += h + 8;
-      if (p.y > h + 4) p.y -= h + 8;
-    }
-
-    // ── the one: travels between decisions, with eased intent
-    s.t += dt / s.dur;
-    if (s.t >= 1) {
-      s.from = { x: s.sx, y: s.sy };
-      const ang = rand(0, Math.PI * 2);
-      const dist = rand(0.18, 0.4) * Math.min(w, h * 1.6);
-      s.to = {
-        x: clamp(s.from.x + Math.cos(ang) * dist, w * 0.12, w * 0.88),
-        y: clamp(s.from.y + Math.sin(ang) * dist, h * 0.15, h * 0.85),
+    const cx = w * 0.56;
+    const cy = h * 0.5;
+    const rx = Math.min(w * 0.34, h * 0.62);
+    const ry = Math.min(h * 0.36, w * 0.3);
+    const tilt = -0.32;
+    const loop = (u: number) => {
+      const a = u * Math.PI * 2;
+      const x0 = Math.cos(a) * rx;
+      const y0 = Math.sin(a) * ry * 0.62;
+      const z = Math.sin(a); // depth: -1 back, +1 front
+      return {
+        x: cx + x0 * Math.cos(tilt) - y0 * Math.sin(tilt),
+        y: cy + x0 * Math.sin(tilt) + y0 * Math.cos(tilt) + Math.cos(a * 2 + time * 0.3) * 18,
+        z,
       };
-      s.curve = rand(-0.35, 0.35);
-      s.dur = lerp(3.2, 1.15, f);
-      s.t = 0;
-      audio.tick(0.04 + f * 0.16, { pan: (s.from.x / w) * 1.6 - 0.8 });
-    }
-    const e = easeInOutCubic(s.t);
-    const dx = s.to.x - s.from.x;
-    const dy = s.to.y - s.from.y;
-    const arc = Math.sin(Math.PI * e) * s.curve;
-    const purposeX = s.from.x + dx * e - dy * arc;
-    const purposeY = s.from.y + dy * e + dx * arc;
-    // at zero focus it dissolves back into the crowd's behaviour
-    const crowd = s.ps[0];
-    const mix = smoothstep(0, 0.45, f);
-    s.sx = lerp(crowd.x, purposeX, mix);
-    s.sy = lerp(crowd.y, purposeY, mix);
-    s.trail.unshift({ x: s.sx, y: s.sy });
-    if (s.trail.length > 90) s.trail.pop();
+    };
 
-    // ── draw
     ctx.clearRect(0, 0, w, h);
-    const r = 1.6;
-    ctx.fillStyle = C.fg;
-    ctx.globalAlpha = lerp(0.72, 0.16, smoothstep(0.3, 1, f));
-    ctx.beginPath();
-    for (let i = 1; i < s.ps.length; i++) {
-      const p = s.ps[i];
-      ctx.moveTo(p.x + r, p.y);
-      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
-    }
-    ctx.fill();
 
-    // trail only appears once its motion is allowed to dominate
-    const trailA = smoothstep(0.55, 1, f);
-    if (trailA > 0) {
-      ctx.strokeStyle = C.accent;
-      ctx.lineCap = 'round';
-      for (let i = 1; i < s.trail.length; i++) {
-        ctx.globalAlpha = trailA * (1 - i / s.trail.length) * 0.6;
-        ctx.lineWidth = lerp(2.5, 0.3, i / s.trail.length);
-        ctx.beginPath();
-        ctx.moveTo(s.trail[i - 1].x, s.trail[i - 1].y);
-        ctx.lineTo(s.trail[i].x, s.trail[i].y);
-        ctx.stroke();
+    // dust
+    ctx.fillStyle = '#141414';
+    for (const d of s.dust) {
+      d.a += dt * (0.2 + s.noiseAmt * 2);
+      const nx = Math.cos(d.a) * 6 * (1 + s.noiseAmt * 4);
+      const ny = Math.sin(d.a * 1.3) * 6 * (1 + s.noiseAmt * 4);
+      ctx.globalAlpha = lerp(0.55, 0.12, s.f);
+      ctx.beginPath();
+      ctx.arc(d.x * w + nx, d.y * h + ny, d.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // flow
+    const items: { x: number; y: number; r: number; z: number }[] = [];
+    for (const p of s.flow) {
+      const u = p.o + s.t * p.s * 0.6;
+      const q = loop(u % 1);
+      let x = q.x;
+      let y = q.y;
+      if (s.noiseAmt > 0.01) {
+        p.jx = damp(p.jx, (Math.random() - 0.5) * 60, 8, dt);
+        p.jy = damp(p.jy, (Math.random() - 0.5) * 60, 8, dt);
+        x += p.jx * s.noiseAmt;
+        y += p.jy * s.noiseAmt;
       }
+      if (ptr.current.inside && P.attract > 0.01) {
+        const dx = ptr.current.px - x;
+        const dy = ptr.current.py - y;
+        const d = Math.hypot(dx, dy);
+        const pull = P.attract * Math.exp(-d / 260) * 0.65;
+        x += dx * pull;
+        y += dy * pull;
+      }
+      if (!p.init) {
+        p.px = x;
+        p.py = y;
+        p.init = true;
+      }
+      p.px = damp(p.px, x, 10, dt);
+      p.py = damp(p.py, y, 10, dt);
+      const r = lerp(3, 15, (q.z + 1) / 2) * lerp(1, 0.75, s.f);
+      items.push({ x: p.px, y: p.py, r, z: q.z });
     }
+    items.sort((a, b) => a.z - b.z);
 
-    const hot = smoothstep(0.72, 1, f);
-    ctx.globalAlpha = lerp(0.72, 1, mix);
-    ctx.fillStyle = hot > 0.5 ? C.accent : C.fg;
+    const lu = s.lead % 1;
+    const L = loop(lu);
+    const lr = lerp(14, 30, (L.z + 1) / 2) * lerp(0.9, 1.25, s.f);
+
+    // leader trail
+    s.trail.unshift({ x: L.x, y: L.y });
+    if (s.trail.length > 70) s.trail.pop();
+    ctx.strokeStyle = '#141414';
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.35;
     ctx.beginPath();
-    ctx.arc(s.sx, s.sy, r + hot * 2.4, 0, Math.PI * 2);
-    ctx.fill();
+    s.trail.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
+    ctx.stroke();
 
-    // realization: we mark what the eye already found
-    if (stageRef.current >= 2) {
-      const ring = 18 + Math.sin(time * 2.4) * 2;
-      ctx.globalAlpha = 0.85;
-      ctx.strokeStyle = C.fg;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.arc(s.sx, s.sy, ring, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(s.sx + ring * 0.7, s.sy - ring * 0.7);
-      ctx.lineTo(s.sx + 46, s.sy - 40);
-      ctx.lineTo(s.sx + 120, s.sy - 40);
-      ctx.stroke();
-      ctx.fillStyle = C.fg;
-      ctx.font = '10px "IBM Plex Mono", monospace';
-      ctx.fillText('SAME SIZE. SAME COLOUR.', s.sx + 50, s.sy - 46);
-      ctx.fillText('DIFFERENT MOTION.', s.sx + 50, s.sy - 28);
+    let leaderDrawn = false;
+    const drawLeader = () => {
+      ctx.globalAlpha = 0.35 + s.f * 0.65;
+      drawSphere(ctx, 'glow', L.x, L.y, lr * lerp(2.2, 4.2, s.f));
+      ctx.globalAlpha = 1;
+      drawSphere(ctx, 'orange', L.x, L.y, lr);
+      leaderDrawn = true;
+    };
+    for (const it of items) {
+      if (!leaderDrawn && it.z > L.z) drawLeader();
+      ctx.globalAlpha = lerp(1, 0.28, s.f) * lerp(0.55, 1, (it.z + 1) / 2);
+      drawSphere(ctx, 'black', it.x, it.y, it.r);
     }
+    if (!leaderDrawn) drawLeader();
     ctx.globalAlpha = 1;
+
+    // you hear the leader as it passes closest to you
+    const front = L.z > 0.98 ? 1 : 0;
+    if (front && !s.lastFront) audio.wood(1300, 0.12 + s.f * 0.2, { pan: (L.x / w) * 1.6 - 0.8 });
+    s.lastFront = front;
   });
 
+  const playDemo = () => {
+    const o = { f: 0, a: 0 };
+    gsap
+      .timeline()
+      .to(o, { f: 0, a: 0, duration: 0.01, onComplete: () => setNoise(true) })
+      .to(o, { f: 1, duration: 2.6, ease: 'power2.inOut', onUpdate: () => setFocus(o.f), onStart: () => setNoise(false) }, '+=1.4')
+      .to(o, { a: 1, duration: 1.4, ease: 'power2.out', onUpdate: () => setAttract(o.a) }, '+=0.8')
+      .to(o, { f: 0.55, a: 0.25, duration: 1.6, ease: 'power2.inOut', onUpdate: () => (setFocus(o.f), setAttract(o.a)) }, '+=1.6');
+  };
+
   return (
-    <Chapter id="attention" env="paper" number="01" title="Attention" length={4.2} thresholds={[0.14, 0.34, 0.52, 0.7]}>
-      {({ stage }) => {
-        stageRef.current = stage;
-        return (
-          <div className="attention">
-            <canvas className="fill-canvas" ref={canvasRef} data-cursor="disturb" />
-            <div className="chapter-mark mono">
-              <span>01</span>
-              <span>Attention</span>
-            </div>
-            <div className="att-whisper">
-              <Reveal show={stage === 1}>
-                <em>Don't look for anything.</em>
-              </Reveal>
-              <Reveal show={stage === 2} className="att-whisper-2">
-                <em>And yet, your eye found one.</em>
-              </Reveal>
-            </div>
-            <div className={`att-principle ${stage >= 4 ? 'is-docked' : ''}`}>
-              <h2 className="display">
-                <Split text="MOTION DIRECTS" show={stage >= 3} stagger={24} />
-                <br />
-                <Split text="ATTENTION." show={stage >= 3} stagger={24} delay={320} />
-              </h2>
-              <Reveal show={stage >= 3} delay={700} className="body-small">
-                Before motion communicates information,
-              </Reveal>
-              <Reveal show={stage >= 3} delay={800} className="body-small">
-                it communicates priority.
-              </Reveal>
-            </div>
-            <div className={`att-control panel ${stage >= 4 ? 'is-in' : ''}`}>
-              <Slider
-                name="Focus"
-                value={focus}
-                onChange={(v) => {
-                  setFocus(v);
-                  focusTarget.current = v;
-                }}
-                labels={['Low', 'Medium', 'Strong']}
-              />
-              <p className="att-desc mono">{describe(focus)}</p>
-            </div>
-          </div>
-        );
-      }}
-    </Chapter>
+    <Panel
+      id="attention"
+      num="02"
+      title="Attention"
+      theme="paper"
+      headline={['Motion', 'Directs', 'Attention.']}
+      body={<p>It guides the eye, creates hierarchy and helps the important feel important.</p>}
+      actions={<PillButton onClick={playDemo}>Play demo</PillButton>}
+      aside={
+        <TryPanel>
+          <TryRow label="Add noise">
+            <Toggle on={noise} onChange={setNoise} />
+          </TryRow>
+          <TryRow label="Speed">
+            <Slider value={speed} onChange={setSpeed} />
+          </TryRow>
+          <TryRow label="Focus">
+            <Slider value={focus} onChange={setFocus} />
+          </TryRow>
+          <TryRow label="Attraction">
+            <Slider value={attract} onChange={setAttract} />
+          </TryRow>
+          <p className="try-note">Move your cursor over the field to pull the crowd.</p>
+        </TryPanel>
+      }
+    >
+      <div className="fill" ref={wrapRef}>
+        <canvas className="fill" ref={canvasRef} />
+      </div>
+    </Panel>
   );
 }
+

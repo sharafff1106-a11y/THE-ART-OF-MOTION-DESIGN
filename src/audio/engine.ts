@@ -213,6 +213,27 @@ class AudioEngine {
     }
   }
 
+  /** Air displaced by a moving object: band-passed noise sweeping upwards. */
+  whoosh(dur = 0.5, gain = 0.2, o: VoiceOpts = {}) {
+    if (!this.live) return;
+    const ctx = this.ctx!;
+    const t = o.when ?? ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(300, t);
+    f.frequency.exponentialRampToValueAtTime(2400, t + dur);
+    const e = ctx.createGain();
+    e.gain.setValueAtTime(0.0001, t);
+    e.gain.exponentialRampToValueAtTime(1, t + dur * 0.9);
+    e.gain.exponentialRampToValueAtTime(0.0001, t + dur + 0.05);
+    src.connect(f).connect(e).connect(this.bus(gain, o.pan, o.send ?? 0.1));
+    src.start(t, Math.random());
+    src.stop(t + dur + 0.1);
+  }
+
   kick(gain = 0.6, o: VoiceOpts = {}) {
     this.sweep(170, 46, 0.34, gain, o);
     this.burst(1400, 2, 0.012, gain * 0.25, o);

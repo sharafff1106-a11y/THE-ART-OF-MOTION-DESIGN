@@ -1,239 +1,155 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { Chapter } from '../components/Chapter';
-import { Choice } from '../components/Controls';
-import { Reveal, Split } from '../components/Typography';
+import { PillButton, Segment } from '../components/Controls';
+import { Panel } from '../components/Panel';
 import { TIMING, TimingPreset } from '../motion/easing';
-import { useVisibleRaf } from '../motion/hooks';
-import { clamp } from '../motion/math';
+import { useCanvasLoop } from '../motion/hooks';
+import { clamp, lerp } from '../motion/math';
+import { drawSphere } from '../motion/sprites';
 
 /**
- * 02 — TIMING
- *
- * Same object. Same distance. Same duration.
- * Only the distribution of movement over time changes.
+ * 03 — TIMING
+ * Two windows, one clock. Same start, same end, same duration.
+ * Left: linear. Right: whichever personality you choose.
  */
-const MOVE = 1.0; // seconds
-const HOLD_B = 0.85;
-const HOLD_A = 0.45;
-const FRAMES = 24;
+const WAIT = 0.5;
+const MOVE = 1.15;
+const HOLD = 0.95;
+const CYCLE = WAIT + MOVE + HOLD;
+const GHOSTS = 9;
 
-type Mode = TimingPreset['id'] | 'compare';
+const linear = TIMING[0];
+const CHOICES = TIMING.slice(1);
+const CAPTIONS: Record<string, string> = {
+  linear: 'Mechanical. Robotic. Lifeless.',
+  eased: 'Natural. Calm. Considered.',
+  anticipation: 'Natural. Expressive. Alive.',
+  overshoot: 'Energetic. Confident. Playful.',
+  settle: 'Physical. Real. Believable.',
+};
 
-// graph geometry (SVG units)
-const GW = 300;
-const GH = 220;
-const PAD = 26;
-const Y0 = -0.32;
-const Y1 = 1.34;
-const gx = (t: number) => PAD + t * (GW - PAD * 2);
-const gy = (v: number) => GH - PAD - ((v - Y0) / (Y1 - Y0)) * (GH - PAD * 2);
-const curvePath = (p: TimingPreset) =>
-  Array.from({ length: 121 }, (_, i) => {
-    const t = i / 120;
-    return `${i ? 'L' : 'M'}${gx(t).toFixed(2)},${gy(p.ease(t)).toFixed(2)}`;
-  }).join(' ');
+function useBox(ref: React.RefObject<HTMLCanvasElement>, getPreset: () => TimingPreset, clockRef: React.MutableRefObject<number>, arc: boolean) {
+  const last = useRef({ arrived: false });
+  useCanvasLoop(ref, (ctx, w, h) => {
+    const preset = getPreset();
+    const now = performance.now() / 1000 - clockRef.current;
+    const phase = ((now % CYCLE) + CYCLE) % CYCLE;
+    const at = (tt: number) => clamp((tt - WAIT) / MOVE);
+    const x0 = w * 0.16;
+    const x1 = w * 0.84;
+    const cy = h * 0.5;
+    const R = Math.min(w, h) * 0.075;
+    const pos = (u: number) => {
+      const p = preset.ease(u);
+      return { x: lerp(x0, x1, p), y: cy - (arc ? Math.sin(Math.PI * clamp(p)) * h * 0.2 : 0), p };
+    };
+
+    ctx.clearRect(0, 0, w, h);
+    // baseline
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x0, cy + R * 1.6);
+    ctx.lineTo(x1, cy + R * 1.6);
+    ctx.stroke();
+
+    // ghosts: equal time, unequal space
+    for (let k = GHOSTS; k >= 1; k--) {
+      const g = pos(at(phase - k * 0.045));
+      ctx.globalAlpha = (1 - k / (GHOSTS + 1)) * 0.28;
+      drawSphere(ctx, 'grey', g.x, g.y, R);
+    }
+    const c = pos(at(phase));
+    ctx.globalAlpha = 1;
+    drawSphere(ctx, 'white', c.x, c.y, R);
+    if (arc) {
+      const warm = clamp(c.p);
+      ctx.globalAlpha = warm;
+      drawSphere(ctx, 'glow', c.x, c.y, R * 3);
+      drawSphere(ctx, 'orange', c.x, c.y, R);
+      ctx.globalAlpha = 1;
+    }
+
+    // tiny curve readout
+    const gw = Math.min(90, w * 0.22);
+    const gh = gw * 0.62;
+    const gx = w - gw - 18;
+    const gy = h - gh - 18;
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.strokeRect(gx, gy, gw, gh);
+    ctx.strokeStyle = arc ? '#ff6a2c' : 'rgba(255,255,255,0.7)';
+    ctx.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const u = i / 40;
+      const yy = gy + gh - (preset.ease(u) * 0.75 + 0.12) * gh;
+      if (i) ctx.lineTo(gx + u * gw, yy);
+      else ctx.moveTo(gx + u * gw, yy);
+    }
+    ctx.stroke();
+    const u = at(phase);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(gx + u * gw, gy + gh - (preset.ease(u) * 0.75 + 0.12) * gh, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    const arrived = phase > WAIT + MOVE * 0.98;
+    if (arrived && !last.current.arrived) audio.click(arc ? 2600 : 900, arc ? 0.2 : 0.12, { pan: 0.6 });
+    last.current.arrived = arrived;
+  });
+}
 
 export function Timing() {
-  const [mode, setMode] = useState<Mode>('linear');
-  const lanes = mode === 'compare' ? TIMING : TIMING.filter((t) => t.id === mode);
-  const active = mode === 'compare' ? null : lanes[0];
-
-  const rootRef = useRef<HTMLDivElement>(null);
-  const objRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const laneRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const headRefs = useRef<(SVGCircleElement | null)[]>([]);
-  const vlineRef = useRef<SVGLineElement>(null);
-  const scrubRef = useRef<HTMLDivElement>(null);
-  const scrubHeadRef = useRef<HTMLDivElement>(null);
-  const frameLabelRef = useRef<HTMLSpanElement>(null);
-
-  const clock = useRef({ phase: 'fwd' as 'fwd' | 'holdB' | 'holdA', t: 0, scrubbing: false, resumeAt: 0 });
-  const motion = useRef<{ prev: number[]; crossings: number[] }>({ prev: [], crossings: [] });
-
-  const paths = useMemo(() => TIMING.map(curvePath), []);
-
-  useVisibleRaf(rootRef, (dt) => {
-    const c = clock.current;
-    const now = performance.now() / 1000;
-    if (!c.scrubbing && now >= c.resumeAt) {
-      c.t += dt;
-      if (c.phase === 'fwd' && c.t >= MOVE) {
-        c.phase = 'holdB';
-        c.t = 0;
-      } else if (c.phase === 'holdB' && c.t >= HOLD_B) {
-        c.phase = 'holdA';
-        c.t = 0;
-        motion.current.crossings = [];
-      } else if (c.phase === 'holdA' && c.t >= HOLD_A) {
-        c.phase = 'fwd';
-        c.t = 0;
-      }
-    }
-    const u = c.phase === 'fwd' ? clamp(c.t / MOVE) : c.phase === 'holdB' ? 1 : 0;
-    const visible = c.phase !== 'holdA' || c.scrubbing;
-
-    lanes.forEach((preset, i) => {
-      const obj = objRefs.current[i];
-      const lane = laneRefs.current[i];
-      if (!obj || !lane) return;
-      const L = lane.clientWidth;
-      const pos = preset.ease(u);
-      const prev = motion.current.prev[i] ?? pos;
-      const v = dt > 0 ? (pos - prev) / dt : 0;
-      motion.current.prev[i] = pos;
-      const st = clamp(Math.abs(v) * 0.06, 0, 0.42);
-      obj.style.transform = `translate3d(${pos * L}px,0,0) scale(${1 + st}, ${1 / (1 + st)})`;
-      obj.style.opacity = visible ? '1' : '0';
-
-      // every time it crosses B, you hear it — the settle literally rings
-      if (!c.scrubbing && c.phase === 'fwd' && (prev - 1) * (pos - 1) <= 0 && prev !== pos) {
-        const n = (motion.current.crossings[i] = (motion.current.crossings[i] ?? 0) + 1);
-        audio.click(2200 + i * 180, (0.22 / n) * (mode === 'compare' ? 0.5 : 1), { pan: 0.5 });
-      }
-
-      const head = headRefs.current[i];
-      if (head) {
-        head.setAttribute('cx', String(gx(u)));
-        head.setAttribute('cy', String(gy(pos)));
-      }
-    });
-    vlineRef.current?.setAttribute('x1', String(gx(u)));
-    vlineRef.current?.setAttribute('x2', String(gx(u)));
-    if (scrubHeadRef.current) scrubHeadRef.current.style.left = `${u * 100}%`;
-    if (frameLabelRef.current)
-      frameLabelRef.current.textContent = `F ${String(Math.round(u * FRAMES)).padStart(2, '0')} / ${FRAMES}  ·  ${Math.round(u * MOVE * 1000)
-        .toString()
-        .padStart(4, '0')} MS`;
-  });
-
-  const scrubTo = (clientX: number) => {
-    const r = scrubRef.current!.getBoundingClientRect();
-    const u = clamp((clientX - r.left) / r.width);
-    const c = clock.current;
-    c.phase = 'fwd';
-    c.t = u * MOVE;
-  };
+  const [choice, setChoice] = useState('anticipation');
+  const choiceRef = useRef(CHOICES[1]);
+  const clock = useRef(0);
+  const leftRef = useRef<HTMLCanvasElement>(null);
+  const rightRef = useRef<HTMLCanvasElement>(null);
+  useBox(leftRef, () => linear, clock, false);
+  useBox(rightRef, () => choiceRef.current, clock, true);
+  const preset = CHOICES.find((c) => c.id === choice)!;
 
   return (
-    <Chapter id="timing" env="bluegrey" number="02" title="Timing" length={4.4} thresholds={[0.12, 0.3, 0.46, 0.7]}>
-      {({ stage }) => (
-        <div className={`timing ${mode === 'compare' ? 'is-compare' : ''}`} ref={rootRef}>
-          <div className="chapter-mark mono">
-            <span>02</span>
-            <span>Timing</span>
-          </div>
-
-          <div className="tm-lanes">
-            {lanes.map((p, i) => (
-              <div className="tm-lane" key={p.id}>
-                <span className="tm-lane-label mono">{mode === 'compare' ? p.label : ''}</span>
-                <span className="tm-ab serif">A</span>
-                <div className="tm-track" ref={(el) => (laneRefs.current[i] = el)}>
-                  <div className="tm-line" />
-                  {/* onion skin: equal time, unequal space */}
-                  {Array.from({ length: FRAMES + 1 }, (_, f) => (
-                    <span key={f} className="tm-ghost" style={{ left: `${p.ease(f / FRAMES) * 100}%` }} />
-                  ))}
-                  <div className="tm-obj" ref={(el) => (objRefs.current[i] = el)} />
-                </div>
-                <span className="tm-ab serif">B</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="tm-copy">
-            <Reveal show={stage >= 1} className="tm-line-1">
-              Same movement.
-            </Reveal>
-            <Reveal show={stage >= 2} className="tm-line-1">
-              Different timing.
-            </Reveal>
-            <Reveal show={stage >= 3} className="tm-line-1">
-              Different personality.
-            </Reveal>
-            <div className={`tm-personality ${stage >= 1 ? 'is-in' : ''}`}>
-              <em key={mode}>{active ? active.personality : 'five characters.'}</em>
-              <p className="mono">{active ? active.note : 'One distance. One duration. Five ways to spend it.'}</p>
-            </div>
-          </div>
-
-          <figure className={`tm-graph ${stage >= 1 ? 'is-in' : ''}`}>
-            <svg viewBox={`0 0 ${GW} ${GH}`} aria-label="Motion curve">
-              <line className="g-axis" x1={gx(0)} x2={gx(1)} y1={gy(0)} y2={gy(0)} />
-              <line className="g-axis dashed" x1={gx(0)} x2={gx(1)} y1={gy(1)} y2={gy(1)} />
-              <line className="g-axis" x1={gx(0)} x2={gx(0)} y1={gy(Y0)} y2={gy(Y1)} />
-              <text className="g-label" x={gx(0) - 8} y={gy(0) + 3} textAnchor="end">
-                A
-              </text>
-              <text className="g-label" x={gx(0) - 8} y={gy(1) + 3} textAnchor="end">
-                B
-              </text>
-              <text className="g-label" x={gx(1)} y={GH - 8} textAnchor="end">
-                TIME →
-              </text>
-              <line className="g-vline" ref={vlineRef} y1={gy(Y0)} y2={gy(Y1)} />
-              {TIMING.map((p, i) => {
-                const li = lanes.indexOf(p);
-                const on = li >= 0;
-                return (
-                  <g key={p.id} className={`g-curve ${on ? 'is-on' : ''}`}>
-                    <path d={paths[i]} />
-                    {on && <circle r={4} ref={(el) => (headRefs.current[li] = el)} />}
-                  </g>
-                );
-              })}
-            </svg>
-            <figcaption className="mono">Position over time</figcaption>
-          </figure>
-
-          <div className={`tm-controls ${stage >= 2 ? 'is-in' : ''}`}>
-            <Choice<Mode>
-              options={[...TIMING.map((t) => ({ id: t.id as Mode, label: t.label })), { id: 'compare', label: 'All five' }]}
-              value={mode}
-              onChange={(m) => {
-                setMode(m);
-                motion.current = { prev: [], crossings: [] };
-                clock.current.phase = 'holdA';
-                clock.current.t = 0;
-              }}
-            />
-            <div
-              className="tm-scrub"
-              ref={scrubRef}
-              data-cursor="scrub"
-              onPointerDown={(e) => {
-                (e.target as HTMLElement).setPointerCapture(e.pointerId);
-                clock.current.scrubbing = true;
-                scrubTo(e.clientX);
-              }}
-              onPointerMove={(e) => {
-                if (clock.current.scrubbing) scrubTo(e.clientX);
-              }}
-              onPointerUp={() => {
-                clock.current.scrubbing = false;
-                clock.current.resumeAt = performance.now() / 1000 + 1.2;
-              }}
-            >
-              {Array.from({ length: FRAMES + 1 }, (_, f) => (
-                <span key={f} className={`tm-tick ${f % 6 === 0 ? 'major' : ''}`} style={{ left: `${(f / FRAMES) * 100}%` }}>
-                  {f % 6 === 0 && <i>{String(f).padStart(2, '0')}</i>}
-                </span>
-              ))}
-              <div className="tm-scrub-head" ref={scrubHeadRef} />
-            </div>
-            <span className="tm-frame mono" ref={frameLabelRef} />
-          </div>
-
-          <div className={`tm-principle ${stage >= 4 ? 'is-in' : ''}`}>
-            <h2 className="display">
-              <Split text="TIMING CREATES" show={stage >= 4} />
-              <br />
-              <Split text="CHARACTER." show={stage >= 4} delay={300} />
-            </h2>
-          </div>
+    <Panel
+      id="timing"
+      num="03"
+      title="Timing"
+      theme="dark"
+      headline={['Same', 'movement.', 'Different', 'feeling.']}
+      body={<p>Timing changes everything.</p>}
+      actions={
+        <PillButton
+          onClick={() => {
+            clock.current = performance.now() / 1000;
+          }}
+        >
+          Play comparison
+        </PillButton>
+      }
+    >
+      <div className="tm-boxes">
+        <figure className="tm-box">
+          <figcaption className="tm-box-label">Linear</figcaption>
+          <canvas ref={leftRef} />
+          <p className="tm-box-caption">{CAPTIONS.linear}</p>
+        </figure>
+        <figure className="tm-box tm-box--hot">
+          <figcaption className="tm-box-label">With {preset.label.toLowerCase()}</figcaption>
+          <canvas ref={rightRef} />
+          <p className="tm-box-caption">{CAPTIONS[choice]}</p>
+        </figure>
+        <div className="tm-choose">
+          <Segment
+            boxed
+            options={CHOICES.map((c) => ({ id: c.id, label: c.label }))}
+            value={choice}
+            onChange={(id) => {
+              setChoice(id);
+              choiceRef.current = CHOICES.find((c) => c.id === id)!;
+              clock.current = performance.now() / 1000;
+            }}
+          />
         </div>
-      )}
-    </Chapter>
+      </div>
+    </Panel>
   );
 }

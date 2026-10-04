@@ -1,57 +1,67 @@
 import { useEffect, useState } from 'react';
 import { audio } from './audio/engine';
-import { ChapterIndicator } from './components/ChapterIndicator';
-import { CursorSystem } from './components/CursorSystem';
-import { SoundToggle } from './components/SoundToggle';
-import { ENV, Env } from './motion/environments';
-import { installPointer } from './motion/pointer';
+import { DARK_THEMES, Theme } from './components/Panel';
+import { CHAPTER_IDS, TopBar } from './components/TopBar';
+import { startSmoothScroll } from './motion/scroll';
 import { Attention } from './sections/Attention';
-import { Coda } from './sections/Coda';
-import { Opening } from './sections/Opening';
+import { Contrast } from './sections/Contrast';
+import { Emotion } from './sections/Emotion';
+import { Final } from './sections/Final';
+import { Hero } from './sections/Hero';
+import { Possibilities } from './sections/Possibilities';
+import { Process } from './sections/Process';
 import { Rhythm } from './sections/Rhythm';
+import { Silence } from './sections/Silence';
+import { Sound } from './sections/Sound';
+import { Story } from './sections/Story';
 import { Timing } from './sections/Timing';
 import { Weight } from './sections/Weight';
 
 export default function App() {
-  const [chapter, setChapter] = useState(0);
+  const [current, setCurrent] = useState(0);
+  const [dark, setDark] = useState(false);
 
   useEffect(() => {
-    installPointer();
-    const root = document.documentElement;
+    startSmoothScroll();
     const meta = document.querySelector('meta[name="theme-color"]');
+    // the top bar reacts to whatever is under it
     const io = new IntersectionObserver(
       (entries) => {
         entries.forEach((e) => {
           if (!e.isIntersecting) return;
           const el = e.target as HTMLElement;
-          const env = el.dataset.env as Env;
-          root.dataset.env = env;
-          meta?.setAttribute('content', ENV[env].bg);
-          setChapter(Number(el.dataset.chapter));
-          // every chapter starts from silence; its own systems bring sound back
+          const idx = CHAPTER_IDS.indexOf(el.id);
+          if (idx >= 0) setCurrent(idx);
+          const isDark = DARK_THEMES.includes(el.dataset.theme as Theme);
+          setDark(isDark);
+          meta?.setAttribute('content', isDark ? '#0c0c0d' : '#f2efe9');
           audio.air(0);
         });
       },
-      { rootMargin: '-50% 0px -50% 0px' },
+      { rootMargin: '-6% 0px -93% 0px' },
     );
-    document.querySelectorAll('[data-env]').forEach((s) => io.observe(s));
+    document.querySelectorAll('section[data-theme]').forEach((s) => io.observe(s));
     return () => io.disconnect();
   }, []);
 
   return (
     <>
+      <TopBar current={current} dark={dark} />
       <main>
-        <Opening />
+        <Hero />
         <Attention />
         <Timing />
         <Weight />
         <Rhythm />
-        <Coda />
+        <Contrast />
+        <Sound />
+        <Emotion />
+        <Silence />
+        <Story />
+        <Process />
+        <Possibilities />
+        <Final />
       </main>
-      <ChapterIndicator current={chapter} />
-      <SoundToggle />
-      <CursorSystem />
-      <div className="grain" aria-hidden />
     </>
   );
 }

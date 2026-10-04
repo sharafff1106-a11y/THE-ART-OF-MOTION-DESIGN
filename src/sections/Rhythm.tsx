@@ -1,130 +1,119 @@
 import { useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { Chapter } from '../components/Chapter';
-import { Choice, Slider } from '../components/Controls';
-import { Reveal } from '../components/Typography';
-import { ENV } from '../motion/environments';
-import { useCanvasLoop } from '../motion/hooks';
+import { Segment, Slider, Toggle } from '../components/Controls';
+import { Panel } from '../components/Panel';
+import { useCanvasLoop, useSoundEnabled } from '../motion/hooks';
 import { clamp, lerp, rand } from '../motion/math';
+import { drawSphere } from '../motion/sprites';
 
 /**
- * 04 — RHYTHM
- *
- * One bar, drawn as space. Where a circle sits in the line is when it
- * sounds. The spacing *is* the rhythm — seen and heard at once.
+ * 05 — RHYTHM
+ * Hits are placed in space along one bar. Each one excites the spectrum
+ * and the ribbon at its position — the eye and the ear read the same pattern.
  */
-const C = ENV.orange;
-const LOOKAHEAD = 0.12;
-const STEPS = 16;
-
-type Mode = 'regular' | 'syncopated' | 'triplet' | 'chaotic' | 'human' | 'yours';
+type Mode = 'regular' | 'syncopated' | 'triplet' | 'human' | 'chaotic';
 interface Hit {
   t: number;
   v: number;
   accent: boolean;
-  /** pitch multiplier */
   p: number;
 }
-
-const grid = (steps: number[], accents: number[]): Hit[] =>
-  steps.map((s) => ({ t: s / STEPS, v: accents.includes(s) ? 1 : 0.7, accent: accents.includes(s), p: 1 }));
-
-const GEN: Record<Mode, (yours: Set<number>) => Hit[]> = {
-  regular: () => Array.from({ length: 8 }, (_, i) => ({ t: i / 8, v: i % 2 ? 0.62 : 0.85, accent: i % 4 === 0, p: 1 })),
-  syncopated: () => grid([0, 3, 6, 10, 12, 14], [0, 6, 12]),
+const S16 = (steps: number[], acc: number[]): Hit[] => steps.map((s) => ({ t: s / 16, v: acc.includes(s) ? 1 : 0.7, accent: acc.includes(s), p: 1 }));
+const GEN: Record<Mode, () => Hit[]> = {
+  regular: () => Array.from({ length: 8 }, (_, i) => ({ t: i / 8, v: i % 2 ? 0.62 : 0.88, accent: i % 4 === 0, p: 1 })),
+  syncopated: () => S16([0, 3, 6, 10, 12, 14], [0, 6, 12]),
   triplet: () => Array.from({ length: 12 }, (_, i) => ({ t: i / 12, v: i % 3 ? 0.55 : 0.95, accent: i % 6 === 0, p: i % 3 ? 1.2 : 1 })),
-  chaotic: () => {
-    const n = Math.round(rand(4, 11));
-    return Array.from({ length: n }, () => ({ t: Math.random(), v: rand(0.3, 1), accent: Math.random() < 0.25, p: rand(0.5, 1.8) })).sort(
-      (a, b) => a.t - b.t,
-    );
-  },
   human: () =>
     Array.from({ length: 8 }, (_, i) => ({
-      t: clamp(i / 8 + (i ? rand(-0.011, 0.011) : rand(0, 0.006))),
-      v: (i % 2 ? 0.55 : 0.78) + rand(-0.12, 0.14),
+      t: clamp(i / 8 + (i ? rand(-0.012, 0.012) : rand(0, 0.006))),
+      v: (i % 2 ? 0.55 : 0.8) + rand(-0.12, 0.12),
       accent: i % 4 === 0,
       p: 1 + rand(-0.03, 0.03),
     })),
-  yours: (yours) => grid([...yours].sort((a, b) => a - b), [0, 4, 8, 12]),
+  chaotic: () =>
+    Array.from({ length: Math.round(rand(5, 11)) }, () => ({ t: Math.random(), v: rand(0.3, 1), accent: Math.random() < 0.25, p: rand(0.5, 1.8) })).sort(
+      (a, b) => a.t - b.t,
+    ),
 };
-
 const MODES: { id: Mode; label: string }[] = [
   { id: 'regular', label: 'Regular' },
   { id: 'syncopated', label: 'Syncopated' },
   { id: 'triplet', label: 'Triplet' },
-  { id: 'chaotic', label: 'Chaotic' },
   { id: 'human', label: 'Human' },
-  { id: 'yours', label: 'Yours' },
+  { id: 'chaotic', label: 'Chaotic' },
 ];
+const BARS = 96;
 
-const WORDS = ['MOTION', 'AND', 'SOUND', 'SPEAK', 'THE', 'SAME', 'LANGUAGE.'];
+let barSprite: HTMLCanvasElement | null = null;
+function getBarSprite() {
+  if (barSprite) return barSprite;
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 256;
+  const g = c.getContext('2d')!;
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, 'rgba(255,90,30,0)');
+  grad.addColorStop(0.7, 'rgba(255,120,50,1)');
+  grad.addColorStop(1, 'rgba(255,90,30,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 4, 256);
+  return (barSprite = c);
+}
+const LOOKAHEAD = 0.12;
 
 export function Rhythm() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mode, setModeState] = useState<Mode>('regular');
-  const [bpm, setBpm] = useState(96);
-  const [words, setWords] = useState(0);
-  const modeRef = useRef<Mode>('regular');
-  const bpmRef = useRef(96);
-  const stageRef = useRef(0);
-  const yours = useRef(new Set([0, 4, 8, 10, 12]));
+  const soundOn = useSoundEnabled();
+  const [mode, setModeState] = useState<Mode>('syncopated');
+  const [bpm, setBpm] = useState(100);
+  const modeRef = useRef<Mode>('syncopated');
+  const bpmRef = useRef(100);
 
   const seq = useRef({
     barStart: -1,
     bar: [] as Hit[],
     idx: 0,
     hitAt: [] as number[],
-    history: [] as Hit[][],
-    rings: [] as { x: number; t0: number; v: number }[],
     pending: [] as { time: number; i: number }[],
-    words: 0,
+    energy: new Float32Array(BARS),
+    flicker: new Float32Array(BARS),
   });
 
-  const regenerate = (resetIdx: boolean) => {
+  const regen = (reset: boolean) => {
     const s = seq.current;
-    s.bar = GEN[modeRef.current](yours.current);
+    s.bar = GEN[modeRef.current]();
     s.hitAt = s.bar.map(() => -10);
-    if (resetIdx) {
+    if (reset) {
       s.pending = [];
       const now = performance.now() / 1000;
-      const barDur = 240 / bpmRef.current;
-      s.idx = s.bar.findIndex((h) => s.barStart + h.t * barDur > now + LOOKAHEAD);
+      const bd = 240 / bpmRef.current;
+      s.idx = s.bar.findIndex((h) => s.barStart + h.t * bd > now + LOOKAHEAD);
       if (s.idx < 0) s.idx = s.bar.length;
     }
-  };
-
-  const setMode = (m: Mode) => {
-    modeRef.current = m;
-    setModeState(m);
-    regenerate(true);
   };
 
   const play = (h: Hit, time: number) => {
     if (!audio.live) return;
     const when = audio.at(time);
-    const pan = h.t * 1.4 - 0.7;
     const m = modeRef.current;
-    if (h.accent && m !== 'chaotic') audio.kick(h.v * 0.55, { when });
-    const f = (m === 'triplet' ? 2100 : m === 'chaotic' ? 1700 : 1800) * h.p;
-    audio.wood(h.accent ? f * 0.75 : f, h.v * 0.32, { when, pan });
+    if (h.accent && m !== 'chaotic') audio.kick(h.v * 0.5, { when });
+    const f = (m === 'triplet' ? 2100 : 1800) * h.p;
+    audio.wood(h.accent ? f * 0.75 : f, h.v * 0.3, { when, pan: h.t * 1.4 - 0.7 });
   };
 
-  useCanvasLoop(canvasRef, (ctx, w, h) => {
+  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = seq.current;
     const now = performance.now() / 1000;
-    const barDur = 240 / bpmRef.current;
-    if (s.barStart < 0 || now - s.barStart > barDur * 2) {
+    const bd = 240 / bpmRef.current;
+    if (s.barStart < 0 || now - s.barStart > bd * 2) {
       s.barStart = now + 0.05;
-      regenerate(false);
+      regen(false);
       s.idx = 0;
     }
-
-    // ── scheduler: look ahead, schedule audio precisely, queue visuals
     for (let guard = 0; guard < 64; guard++) {
       if (s.idx < s.bar.length) {
         const hit = s.bar[s.idx];
-        const at = s.barStart + hit.t * barDur;
+        const at = s.barStart + hit.t * bd;
         if (at < now + LOOKAHEAD) {
           play(hit, at);
           s.pending.push({ time: at, i: s.idx });
@@ -133,11 +122,9 @@ export function Rhythm() {
         }
         break;
       }
-      if (now + LOOKAHEAD >= s.barStart + barDur) {
-        s.history.unshift(s.bar.map((b) => ({ ...b })));
-        if (s.history.length > 6) s.history.pop();
-        s.barStart += barDur;
-        regenerate(false);
+      if (now + LOOKAHEAD >= s.barStart + bd) {
+        s.barStart += bd;
+        regen(false);
         s.idx = 0;
         s.pending = s.pending.filter((p) => p.time >= s.barStart);
         continue;
@@ -145,176 +132,136 @@ export function Rhythm() {
       break;
     }
 
-    // ── layout
-    const x0 = w * 0.1;
-    const x1 = w * 0.9;
+    const x0 = w * 0.04;
+    const x1 = w * 0.96;
     const L = x1 - x0;
-    const cy = h * 0.5;
-    const phase = clamp((now - s.barStart) / barDur);
+    const cy = h * 0.52;
 
-    // fire visuals whose time has come
+    // hits excite the spectrum around their position
     for (let i = s.pending.length - 1; i >= 0; i--) {
       const p = s.pending[i];
-      if (p.time <= now) {
-        s.hitAt[p.i] = p.time;
-        const hit = s.bar[p.i];
-        if (hit) s.rings.push({ x: x0 + hit.t * L, t0: p.time, v: hit.v });
-        s.pending.splice(i, 1);
-        // the principle is spoken in the rhythm itself: one word per hit
-        if (stageRef.current >= 3 && s.words < WORDS.length) {
-          s.words++;
-          setWords(s.words);
+      if (p.time > now) continue;
+      s.hitAt[p.i] = p.time;
+      const hit = s.bar[p.i];
+      if (hit) {
+        const c = hit.t * (BARS - 1);
+        for (let b = 0; b < BARS; b++) {
+          const d = (b - c) / 4.5;
+          s.energy[b] = Math.min(1.4, s.energy[b] + Math.exp(-d * d) * hit.v);
         }
       }
+      s.pending.splice(i, 1);
     }
-
-    if (stageRef.current < 3 && s.words) {
-      s.words = 0;
-      setWords(0);
+    const decay = Math.exp(-dt * 4.2);
+    for (let b = 0; b < BARS; b++) {
+      s.energy[b] *= decay;
+      s.flicker[b] = lerp(s.flicker[b], Math.random(), 0.15);
     }
+    const energyAt = (x: number) => {
+      const f = clamp((x - x0) / L) * (BARS - 1);
+      const i = Math.floor(f);
+      return lerp(s.energy[i], s.energy[Math.min(BARS - 1, i + 1)], f - i);
+    };
 
     ctx.clearRect(0, 0, w, h);
+
+    // spectrum
+    const sprite = getBarSprite();
+    ctx.globalCompositeOperation = 'lighter';
+    const bw = L / BARS;
+    for (let b = 0; b < BARS; b++) {
+      const e = s.energy[b];
+      const hh = (10 + s.flicker[b] * 22 + e * h * 0.42) * (0.65 + 0.35 * Math.sin(b * 0.7));
+      const x = x0 + b * bw;
+      ctx.globalAlpha = Math.min(1, 0.35 + e * 0.65);
+      ctx.drawImage(sprite, x, cy - hh, Math.max(1, bw * 0.45), hh * 1.4);
+    }
+    ctx.globalAlpha = 1;
+
+    // ribbon strands
     ctx.lineWidth = 1;
-    ctx.strokeStyle = C.fg;
-    ctx.fillStyle = C.fg;
-
-    // the step grid — the quantised world the human and the triplet escape from
-    ctx.globalAlpha = 0.28;
-    for (let i = 0; i <= STEPS; i++) {
-      const x = x0 + (i / STEPS) * L;
+    for (let k = 0; k < 6; k++) {
+      ctx.strokeStyle = `rgba(255,255,255,${0.1 + k * 0.035})`;
       ctx.beginPath();
-      ctx.moveTo(x, cy + (i % 4 === 0 ? 34 : 40));
-      ctx.lineTo(x, cy + 48);
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 0.6;
-    ctx.beginPath();
-    ctx.moveTo(x0, cy);
-    ctx.lineTo(x1, cy);
-    ctx.stroke();
-
-    // history: previous bars rise like a score
-    s.history.forEach((bar, bi) => {
-      const y = cy - 70 - bi * 30;
-      ctx.globalAlpha = 0.5 * (1 - bi / 6);
-      ctx.beginPath();
-      ctx.moveTo(x0, y);
-      ctx.lineTo(x1, y);
-      ctx.stroke();
-      ctx.beginPath();
-      bar.forEach((hit) => {
-        const x = x0 + hit.t * L;
-        const r = 2 + hit.v * 3;
-        ctx.moveTo(x + r, y);
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-      });
-      ctx.fill();
-    });
-
-    // rings
-    for (let i = s.rings.length - 1; i >= 0; i--) {
-      const r = s.rings[i];
-      const age = now - r.t0;
-      if (age > 1.2) {
-        s.rings.splice(i, 1);
-        continue;
+      for (let x = x0; x <= x1; x += 6) {
+        const e = energyAt(x);
+        const env = Math.sin(((x - x0) / L) * Math.PI);
+        const y = cy + Math.sin(x * 0.012 + time * 1.4 + k * 0.35) * (14 + e * 60) * env + Math.sin(x * 0.03 - time * 2 + k) * 4 * env;
+        if (x === x0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       }
-      ctx.globalAlpha = (1 - age / 1.2) * 0.5 * r.v;
-      ctx.beginPath();
-      ctx.arc(r.x, cy, 14 + age * 140 * r.v, 0, Math.PI * 2);
       ctx.stroke();
     }
+    ctx.globalCompositeOperation = 'source-over';
 
-    // the circles of this bar
+    // baseline and beat dots
+    ctx.fillStyle = '#fff';
+    ctx.globalAlpha = 0.25;
+    ctx.fillRect(x0, cy + h * 0.2, L, 1);
     s.bar.forEach((hit, i) => {
       const x = x0 + hit.t * L;
       const age = now - s.hitAt[i];
-      const pulse = age >= 0 ? Math.exp(-age * 7) : 0;
-      const r = lerp(7, 16, hit.v) * (1 + pulse * 0.9);
-      ctx.globalAlpha = lerp(0.5, 1, Math.max(pulse, hit.accent ? 0.6 : 0));
-      ctx.fillStyle = pulse > 0.5 ? C.accent : C.fg;
+      const pulse = age >= 0 && age < 2 ? Math.exp(-age * 6) : 0;
+      const r = lerp(2.5, 5.5, hit.v) * (1 + pulse * 1.4);
+      ctx.globalAlpha = 0.5 + pulse * 0.5;
+      if (pulse > 0.05) {
+        drawSphere(ctx, 'glow', x, cy, r * 6 * pulse + r);
+      }
+      ctx.fillStyle = pulse > 0.4 ? '#ff7a3d' : '#ffffff';
       ctx.beginPath();
-      ctx.arc(x, cy - pulse * 10, r, 0, Math.PI * 2);
+      ctx.arc(x, cy, r, 0, Math.PI * 2);
       ctx.fill();
+      ctx.globalAlpha = 0.4;
+      ctx.fillRect(x, cy + h * 0.2 - 4, 1, 8);
     });
 
-    // playhead
+    // the rider
+    const phase = clamp((now - s.barStart) / bd);
     const px = x0 + phase * L;
-    ctx.globalAlpha = 0.9;
-    ctx.fillStyle = C.fg;
-    ctx.fillRect(px, cy - 60, 1, 120);
-    ctx.font = '10px "IBM Plex Mono", monospace';
-    ctx.fillText(`${(phase * 4 + 1).toFixed(2)}`, px + 6, cy - 50);
-
-    // breathing beat counter
-    ctx.globalAlpha = 0.6;
-    ctx.fillText(`${bpmRef.current.toFixed(0)} BPM · 4/4 · ${modeRef.current.toUpperCase()}`, x0, cy + 72);
+    const env = Math.sin(phase * Math.PI);
+    const py = cy + Math.sin(px * 0.012 + time * 1.4 + 0.9) * (14 + energyAt(px) * 60) * env;
     ctx.globalAlpha = 1;
+    drawSphere(ctx, 'white', px, py, 11);
   });
 
-  const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const r = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - r.left) / r.width;
-    const y = (e.clientY - r.top) / r.height;
-    if (x < 0.08 || x > 0.92 || Math.abs(y - 0.5) > 0.12) return;
-    const step = Math.round(((x - 0.1) / 0.8) * STEPS) % STEPS;
-    if (modeRef.current !== 'yours') {
-      // start from what you were hearing, quantised
-      yours.current = new Set(seq.current.bar.map((h) => Math.round(h.t * STEPS) % STEPS));
-    }
-    const set = yours.current;
-    if (set.has(step)) set.delete(step);
-    else set.add(step);
-    audio.wood(1800, 0.3);
-    setMode('yours');
-  };
-
   return (
-    <Chapter id="rhythm" env="orange" number="04" title="Rhythm" length={4} thresholds={[0.12, 0.32, 0.6]}>
-      {({ stage }) => {
-        stageRef.current = stage;
-        return (
-          <div className="rhythm">
-            <canvas className="fill-canvas" ref={canvasRef} onClick={onCanvasClick} data-cursor="tap" />
-            <div className="chapter-mark mono">
-              <span>04</span>
-              <span>Rhythm</span>
-            </div>
-            <div className="rh-intro">
-              <Reveal show={stage >= 1}>
-                <em>Space becomes time.</em>
-              </Reveal>
-              <Reveal show={stage >= 1} delay={150}>
-                <em>Time becomes sound.</em>
-              </Reveal>
-            </div>
-            <div className={`rh-controls ${stage >= 2 ? 'is-in' : ''}`}>
-              <Choice options={MODES} value={mode} onChange={setMode} />
-              <div className="rh-tempo">
-                <Slider
-                  name="Tempo"
-                  min={60}
-                  max={168}
-                  value={bpm}
-                  format={(v) => `${Math.round(v)} BPM`}
-                  onChange={(v) => {
-                    setBpm(v);
-                    bpmRef.current = v;
-                  }}
-                />
-              </div>
-              <p className="rh-hint mono">Tap the line to write your own.</p>
-            </div>
-            <h2 className="rh-principle display" aria-label={WORDS.join(' ')}>
-              {WORDS.map((wd, i) => (
-                <span key={wd} className={`rh-word ${stage >= 3 && i < words ? 'is-in' : ''}`} aria-hidden>
-                  {wd}
-                </span>
-              ))}
-            </h2>
+    <Panel
+      id="rhythm"
+      num="05"
+      title="Rhythm"
+      theme="dark"
+      className="panel--wide-visual"
+      headline={['Motion and sound', 'speak the same language.']}
+      headerRight={<Toggle on={soundOn} onChange={(v) => (v ? void audio.enable() : audio.disable())} labels={['Visual', 'Sound']} />}
+      actions={
+        <div className="rh-actions">
+          <Segment
+            boxed
+            options={MODES}
+            value={mode}
+            onChange={(m) => {
+              modeRef.current = m;
+              setModeState(m);
+              regen(true);
+            }}
+          />
+          <div className="rh-tempo">
+            <Slider
+              label="Tempo"
+              min={60}
+              max={160}
+              value={bpm}
+              format={(v) => `${Math.round(v)} BPM`}
+              onChange={(v) => {
+                setBpm(v);
+                bpmRef.current = v;
+              }}
+            />
           </div>
-        );
-      }}
-    </Chapter>
+        </div>
+      }
+    >
+      <canvas className="fill" ref={canvasRef} />
+    </Panel>
   );
 }
