@@ -28,7 +28,13 @@ const CAPTIONS: Record<string, string> = {
   settle: 'Physical. Real. Believable.',
 };
 
-function useBox(ref: React.RefObject<HTMLCanvasElement>, getPreset: () => TimingPreset, clockRef: React.MutableRefObject<number>, arc: boolean) {
+function useBox(
+  ref: React.RefObject<HTMLCanvasElement>,
+  getPreset: () => TimingPreset,
+  clockRef: React.MutableRefObject<number>,
+  arc: boolean,
+  armRef: React.MutableRefObject<number>,
+) {
   const last = useRef({ arrived: false });
   useCanvasLoop(ref, (ctx, w, h) => {
     const preset = getPreset();
@@ -93,7 +99,8 @@ function useBox(ref: React.RefObject<HTMLCanvasElement>, getPreset: () => Timing
     ctx.fill();
 
     const arrived = phase > WAIT + MOVE * 0.98;
-    if (arrived && !last.current.arrived) audio.click(arc ? 2600 : 900, arc ? 0.2 : 0.12, { pan: 0.6 });
+    // sound only for a run the visitor started
+    if (arrived && !last.current.arrived && performance.now() / 1000 < armRef.current) audio.click(arc ? 2600 : 900, arc ? 0.2 : 0.12, { pan: 0.6 });
     last.current.arrived = arrived;
   });
 }
@@ -104,8 +111,9 @@ export function Timing() {
   const clock = useRef(0);
   const leftRef = useRef<HTMLCanvasElement>(null);
   const rightRef = useRef<HTMLCanvasElement>(null);
-  useBox(leftRef, () => linear, clock, false);
-  useBox(rightRef, () => choiceRef.current, clock, true);
+  const arm = useRef(0);
+  useBox(leftRef, () => linear, clock, false, arm);
+  useBox(rightRef, () => choiceRef.current, clock, true, arm);
   const preset = CHOICES.find((c) => c.id === choice)!;
 
   return (
@@ -114,12 +122,18 @@ export function Timing() {
       num="03"
       title="Timing"
       theme="dark"
+      question="How should it feel?"
       headline={['Same', 'movement.', 'Different', 'feeling.']}
-      body={<p>Timing changes everything.</p>}
+      body={<p>Both balls travel the same distance in the same time. Only the timing differs.</p>}
+      forYou={{
+        text: 'Timing is where personality comes from. The same logo or product shot can feel cheap, calm, premium or energetic depending on how it accelerates and stops.',
+        uses: ['Logo reveals', 'UI transitions', 'Product shots'],
+      }}
       actions={
         <PillButton
           onClick={() => {
             clock.current = performance.now() / 1000;
+            arm.current = clock.current + CYCLE;
           }}
         >
           Play comparison
@@ -146,6 +160,7 @@ export function Timing() {
               setChoice(id);
               choiceRef.current = CHOICES.find((c) => c.id === id)!;
               clock.current = performance.now() / 1000;
+              arm.current = clock.current + CYCLE;
             }}
           />
         </div>

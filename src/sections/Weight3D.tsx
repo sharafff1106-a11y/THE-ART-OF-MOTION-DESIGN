@@ -50,7 +50,7 @@ function Cube({ massRef, dropRef }: { massRef: React.MutableRefObject<number>; d
   const shadow = useRef<THREE.Mesh>(null);
   const { viewport, camera, gl } = useThree();
   const tex = useMemo(shadowTexture, []);
-  const s = useRef({ x: 0, y: 0.6, vx: 0, vy: 0, rot: 0, w: 0, drag: false, tx: 0, ty: 0, shake: 0, lastDrop: 0, squash: 0, sv: 0 });
+  const s = useRef({ x: 0, y: 0.6, vx: 0, vy: 0, rot: 0, w: 0, drag: false, tx: 0, ty: 0, shake: 0, lastDrop: 0, squash: 0, sv: 0, acted: false });
   const floor = -1.25;
 
   useEffect(() => {
@@ -78,6 +78,7 @@ function Cube({ massRef, dropRef }: { massRef: React.MutableRefObject<number>; d
   const onDown = (e: ThreeEvent<PointerEvent>) => {
     e.stopPropagation();
     s.current.drag = true;
+    s.current.acted = true;
     s.current.tx = e.point.x;
     s.current.ty = e.point.y;
     gl.domElement.style.cursor = 'grabbing';
@@ -92,6 +93,7 @@ function Cube({ massRef, dropRef }: { massRef: React.MutableRefObject<number>; d
 
     if (dropRef.current !== st.lastDrop) {
       st.lastDrop = dropRef.current;
+      st.acted = true;
       st.drag = false;
       st.x = lerp(-wall * 0.4, wall * 0.4, Math.random());
       st.y = viewport.height / 2 - SIZE * 0.6;
@@ -125,7 +127,8 @@ function Cube({ massRef, dropRef }: { massRef: React.MutableRefObject<number>; d
           const impact = -st.vy;
           const strength = clamp(impact / 11);
           if (impact > 0.6) {
-            audio.impact(p.mass, strength, { pan: clamp(st.x / wall, -1, 1) * 0.8 });
+            // the first settle on arrival is silent; sound answers the visitor's actions
+            if (st.acted) audio.impact(p.mass, strength, { pan: clamp(st.x / wall, -1, 1) * 0.8 });
             st.shake = Math.max(st.shake, strength * p.shake);
             st.sv -= strength * lerp(5, 0.6, p.mass);
           }
@@ -142,7 +145,7 @@ function Cube({ massRef, dropRef }: { massRef: React.MutableRefObject<number>; d
       if (Math.abs(st.x) > wall) {
         const impact = Math.abs(st.vx);
         st.x = Math.sign(st.x) * wall;
-        if (impact > 1) audio.impact(p.mass, clamp(impact / 14) * 0.8, { pan: Math.sign(st.x) * 0.9 });
+        if (impact > 1 && st.acted) audio.impact(p.mass, clamp(impact / 14) * 0.8, { pan: Math.sign(st.x) * 0.9 });
         st.vx = -st.vx * p.restitution;
         st.w = -st.w * 0.5;
       }

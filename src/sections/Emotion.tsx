@@ -17,15 +17,17 @@ export function Emotion() {
       num="08"
       title="Emotion"
       theme="paper"
+      question="What should people feel?"
       headline={['The same shape.', 'Different feeling.']}
       body={
-        <>
-          <p className="em-q">How should this feel?</p>
-          <p className="em-line" key={emotion}>
-            {e.line}
-          </p>
-        </>
+        <p>
+          Pick a feeling. The shape never changes. Only its speed, movement, colour and sound do. That is exactly what happens to a product in a
+          film.
+        </p>
       }
+      forYou={{
+        text: 'Before anyone reads a word, motion and sound tell your customer how to feel about your product: calm, premium, exciting or trustworthy. I design that feeling on purpose.',
+      }}
       aside={
         <RadioList
           options={(Object.keys(EMOTIONS) as EmotionId[]).map((id) => ({ id, label: EMOTIONS[id].label }))}
@@ -39,7 +41,23 @@ export function Emotion() {
       }
     >
       <div className="em-stage" style={{ '--em-light': e.light } as CSSProperties}>
-        <Lazy3D scene={Emotion3D} props={{ emotionRef }} />
+        <Lazy3D scene={Emotion3D} props={{ emotionRef }} className="em-canvas" />
+        <div className="em-card" key={emotion}>
+          <p className="em-feel">{e.label}</p>
+          <p className="em-line">{e.line}</p>
+          <div className="em-row">
+            <span>Use it for</span>
+            <ul>
+              {e.uses.map((u) => (
+                <li key={u}>{u}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="em-row">
+            <span>How it's made</span>
+            <p>{e.recipe}</p>
+          </div>
+        </div>
       </div>
     </Panel>
   );

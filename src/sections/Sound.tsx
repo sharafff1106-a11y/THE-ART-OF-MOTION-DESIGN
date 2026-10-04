@@ -36,7 +36,7 @@ interface Shard {
   life: number;
 }
 
-function useDrop(ref: React.RefObject<HTMLCanvasElement>, clock: React.MutableRefObject<number>, withSound: boolean) {
+function useDrop(ref: React.RefObject<HTMLCanvasElement>, clock: React.MutableRefObject<number>, withSound: boolean, arm: React.MutableRefObject<number>) {
   const st = useRef({ lastT: 0, shards: [] as Shard[], flash: 0, shake: 0, wave: new Float32Array(120), wi: 0 });
   useCanvasLoop(ref, (ctx, w, h, dt) => {
     const s = st.current;
@@ -47,17 +47,19 @@ function useDrop(ref: React.RefObject<HTMLCanvasElement>, clock: React.MutableRe
     const size = Math.min(w, h) * 0.2;
     const cx = w * 0.5;
 
+    // the loop keeps playing visually; it is only heard after the visitor presses Drop
+    const armed = performance.now() / 1000 < arm.current;
     if (withSound) {
-      if (crossed(HOLD)) audio.whoosh(FALL, 0.16);
+      if (crossed(HOLD) && armed) audio.whoosh(FALL, 0.16);
       if (crossed(impactAt)) {
-        audio.impact(0.8, 0.95);
+        if (armed) audio.impact(0.8, 0.95);
         s.flash = 1;
         s.shake = 1;
         for (let i = 0; i < 26; i++) {
           s.shards.push({ x: cx + rand(-size * 0.5, size * 0.5), y: floor - 4, vx: rand(-260, 260), vy: rand(-420, -80), r: rand(1.5, 4.5), life: 1 });
         }
       }
-      if (crossed(impactAt + 0.32)) audio.impact(0.6, 0.18);
+      if (crossed(impactAt + 0.32) && armed) audio.impact(0.6, 0.18);
     }
     s.lastT = t;
 
@@ -141,25 +143,34 @@ export function Sound() {
   const clock = useRef(0);
   const leftRef = useRef<HTMLCanvasElement>(null);
   const rightRef = useRef<HTMLCanvasElement>(null);
-  useDrop(leftRef, clock, false);
-  useDrop(rightRef, clock, true);
+  const arm = useRef(0);
+  useDrop(leftRef, clock, false, arm);
+  useDrop(rightRef, clock, true, arm);
   return (
     <Panel
       id="sound"
       num="07"
       title="Sound"
       theme="dark"
+      question="Does it feel real?"
       headline={['The same visual.', 'With and without sound.', 'Feel the difference.']}
+      forYou={{
+        text: 'Sound design gives weight, material and impact to what people see. A product shot with designed sound feels expensive; without it, it feels like a render.',
+        uses: ['Product films', 'App sounds', 'Brand sonic logos'],
+      }}
       className="panel--small-h"
       headerRight={<Toggle on={on} onChange={(v) => (v ? void audio.enable() : audio.disable())} labels={['Off', 'On']} />}
-      body={!on ? <p className="snd-warn">Turn sound on to hear the right-hand side.</p> : <p>Nothing changed visually. Everything changed emotionally.</p>}
+      body={!on ? <p className="snd-warn">Turn sound on, then press Drop.</p> : <p>Press Drop and listen to the right-hand side.</p>}
       actions={
         <PillButton
           onClick={() => {
+            void audio.enable();
             clock.current = performance.now() / 1000;
+            arm.current = clock.current + CYCLE - 0.2;
           }}
+          icon="play"
         >
-          Drop again
+          Drop
         </PillButton>
       }
     >

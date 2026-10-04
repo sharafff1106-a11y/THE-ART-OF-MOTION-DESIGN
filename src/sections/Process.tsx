@@ -13,12 +13,42 @@ import { drawSphere } from '../motion/sprites';
  * Drag along the line and watch the same piece mature.
  */
 const STEPS = [
-  { id: 'Concept', note: 'What should people understand — and feel?' },
-  { id: 'Exploration', note: 'Many possible forms. Most will be wrong.' },
-  { id: 'Refinement', note: 'Remove everything that does not serve the idea.' },
-  { id: 'Motion', note: 'Timing, weight and rhythm give it behaviour.' },
-  { id: 'Sound', note: 'Sound gives the behaviour a body.' },
-  { id: 'Final', note: 'An experience people remember.' },
+  {
+    id: 'Brief',
+    me: 'I listen and ask questions until we can say the goal in one sentence.',
+    you: 'Tell me your goal, your audience and how it should feel.',
+    get: 'A short creative brief we both agree on.',
+  },
+  {
+    id: 'Concept',
+    me: 'Two or three creative directions, with moodboards and references.',
+    you: 'Choose a direction and share your thoughts.',
+    get: 'Direction boards to choose from.',
+  },
+  {
+    id: 'Styleframes',
+    me: 'Key still frames that show exactly how the film will look.',
+    you: 'Approve the look before any animation starts.',
+    get: 'A set of styleframes.',
+  },
+  {
+    id: 'Animation',
+    me: 'Timing, weight and rhythm: everything you just played with.',
+    you: 'Review previews and give feedback.',
+    get: 'Animation previews, then the final cut.',
+  },
+  {
+    id: 'Sound',
+    me: 'Sound effects, music and mix, designed together with the motion.',
+    you: 'Listen and give final notes.',
+    get: 'The film with full sound design.',
+  },
+  {
+    id: 'Delivery',
+    me: 'Exports for every platform, checked and named properly.',
+    you: 'Launch it.',
+    get: '16:9, 9:16 and 1:1 versions, cut-downs and sound files.',
+  },
 ];
 
 export function Process() {
@@ -31,15 +61,15 @@ export function Process() {
   const auto = useRef<number | null>(null);
   const reveal = useRef(new Float32Array(STEPS.length));
 
-  const go = (i: number) => {
+  const go = (i: number, sound = true) => {
     const n = clamp(Math.round(i), 0, STEPS.length - 1);
-    if (n !== stepRef.current) audio.wood(1000 + n * 220, 0.18);
+    if (sound && n !== stepRef.current) audio.wood(1000 + n * 220, 0.14);
     stepRef.current = n;
     setStep(n);
   };
   const play = () => {
     if (auto.current) window.clearInterval(auto.current);
-    go(0);
+    go(0, false);
     let i = 0;
     auto.current = window.setInterval(() => {
       i++;
@@ -48,8 +78,8 @@ export function Process() {
         auto.current = null;
         return;
       }
-      go(i);
-    }, 1300);
+      go(i, false);
+    }, 1500);
   };
   useEffect(() => {
     if (visible && stepRef.current === 0) play();
@@ -152,13 +182,11 @@ export function Process() {
       num="11"
       title="Process"
       theme="paper"
-      headline={['From a simple idea', 'to a full experience.']}
-      body={
-        <p className="pr-note" key={step}>
-          <b>{STEPS[step].id}.</b> {STEPS[step].note}
-        </p>
-      }
-      actions={<PillButton onClick={play}>Play process</PillButton>}
+      question="How do we work together?"
+      headline={['From a simple idea', 'to a finished film.']}
+      body={<p>Six clear steps. You always know what is happening, what I need from you, and what you get next.</p>}
+      forYou={{ text: 'No surprises: you approve the direction and the look before animation starts, so the final film is what you expected, only better.' }}
+      actions={<PillButton onClick={play}>Walk me through it</PillButton>}
     >
       <div className="pr-stage" ref={wrapRef}>
         <div
@@ -182,9 +210,20 @@ export function Process() {
           ))}
         </div>
         <canvas className="pr-canvas" ref={canvasRef} />
-        <p className="pr-formula">
-          Idea <span>→</span> Behaviour <span>→</span> Perception
-        </p>
+        <div className="pr-detail" key={step}>
+          <div>
+            <span>What I do</span>
+            <p>{STEPS[step].me}</p>
+          </div>
+          <div>
+            <span>What you do</span>
+            <p>{STEPS[step].you}</p>
+          </div>
+          <div>
+            <span>What you get</span>
+            <p>{STEPS[step].get}</p>
+          </div>
+        </div>
       </div>
     </Panel>
   );

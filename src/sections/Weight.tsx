@@ -35,7 +35,12 @@ export function Weight() {
       title="Weight"
       theme="paper"
       className="panel--small-h"
+      question="Is it believable?"
       headline={['Motion has weight.', 'Weight creates believability.', 'Believability creates emotion.']}
+      forYou={{
+        text: 'Heavy things move slowly and land hard; light things float and bounce. Getting weight right is what makes a product feel solid, premium and real on screen.',
+        uses: ['Product launches', '3D packshots', 'Logo animation'],
+      }}
       body={
         <RadioList
           rail

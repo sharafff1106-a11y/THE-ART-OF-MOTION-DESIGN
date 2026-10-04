@@ -3,143 +3,166 @@ import gsap from 'gsap';
 import { audio } from '../audio/engine';
 import { PillButton, Slider } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { useCanvasLoop, useInView } from '../motion/hooks';
-import { damp, lerp, rand } from '../motion/math';
+import { useCanvasLoop } from '../motion/hooks';
+import { drawHeadphones } from '../motion/kora';
+import { damp, lerp, rand, smoothstep } from '../motion/math';
+import { drawSphere } from '../motion/sprites';
 
 /**
  * 06 — CONTRAST
- * Everything shouting at once means nothing is heard.
- * Drag from chaos to clarity — or play the sequence: noise, CUT, "hello."
+ * The end card of the KORA ad, two ways. In chaos every element shouts;
+ * in clarity one product, one name, one offer, and space around them.
  */
-const NOISE_WORDS = ['LOOK', 'NEW', 'NOW', 'SALE', 'HERE', 'WOW', '!!!', 'CLICK', 'MORE', '50%'];
-const N = 160;
+const STICKERS = ['SALE!', '50% OFF', 'NEW!!', 'LIMITED', 'BUY NOW', 'HOT', 'WOW', 'FREE SHIP', '★★★', 'LAST DAY'];
+const COLORS = ['#ffe23f', '#ff3fa4', '#2fd3ff', '#7cff4f', '#ff5a1f', '#ffffff'];
 
 export function Contrast() {
-  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const visible = useInView(wrapRef, { threshold: 0.4 });
-  const [clarity, setClarity] = useState(1);
-  const [cut, setCut] = useState<'none' | 'hello' | 'principle'>('none');
-  const target = useRef(1);
+  const [clarity, setClarity] = useState(0.15);
+  const [cut, setCut] = useState<'none' | 'name' | 'principle'>('none');
+  const target = useRef(0.15);
   target.current = clarity;
-  const visibleRef = useRef(false);
-  visibleRef.current = visible;
-  const cutRef = useRef(cut);
-  cutRef.current = cut;
   const sim = useRef({
-    c: 1,
-    ps: Array.from({ length: N }, () => ({
+    c: 0.15,
+    stickers: Array.from({ length: 16 }, (_, i) => ({
       x: Math.random(),
       y: Math.random(),
-      vx: rand(-1, 1),
-      vy: rand(-1, 1),
-      k: Math.floor(rand(0, 4)),
-      s: rand(4, 26),
-      r: rand(0, 6.28),
-      word: NOISE_WORDS[Math.floor(rand(0, NOISE_WORDS.length))],
+      r: rand(-0.5, 0.5),
+      s: rand(0.7, 1.4),
+      text: STICKERS[i % STICKERS.length],
+      col: COLORS[i % COLORS.length],
+      ph: Math.random() * 6,
     })),
+    confetti: Array.from({ length: 70 }, () => ({ x: Math.random(), y: Math.random(), v: rand(0.1, 0.4), r: Math.random() * 6, col: COLORS[Math.floor(Math.random() * COLORS.length)] })),
   });
 
   useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = sim.current;
     s.c = damp(s.c, target.current, 6, dt);
     const chaos = 1 - s.c;
-    audio.air(visibleRef.current && cutRef.current === 'none' ? chaos * chaos * 0.9 : 0, 0.3 + chaos * 0.6);
-
+    const calm = smoothstep(0.55, 1, s.c);
     ctx.clearRect(0, 0, w, h);
-    const cx = w * 0.5;
-    const cy = h * 0.5;
-    const R = Math.min(w, h) * 0.34;
-    const wob = chaos * 40;
 
-    // two warm/cool halves of one soft disc
-    const halves: [number, string, string][] = [
-      [-1, 'rgba(255,120,80,0.95)', 'rgba(255,170,150,0)'],
-      [1, 'rgba(70,140,240,0.9)', 'rgba(150,190,240,0)'],
-    ];
-    for (const [side, a, b] of halves) {
-      ctx.save();
-      ctx.beginPath();
-      if (side < 0) ctx.rect(0, 0, cx, h);
-      else ctx.rect(cx, 0, w - cx, h);
-      ctx.clip();
-      const ox = cx + side * (R * 0.25 + Math.sin(time * 3) * wob);
-      const oy = cy + Math.cos(time * 2.3 + side) * wob;
-      const g = ctx.createRadialGradient(ox, oy, R * 0.05, cx, cy, R * 1.25);
-      g.addColorStop(0, a);
-      g.addColorStop(1, b);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
-
-    // noise layer
+    // background: flashing blocks → one soft light
+    ctx.fillStyle = '#141312';
+    ctx.fillRect(0, 0, w, h);
     if (chaos > 0.02) {
-      ctx.font = '600 14px Inter, sans-serif';
-      for (const p of s.ps) {
-        const sp = 60 + chaos * 380;
-        p.x += (p.vx * sp * dt) / w;
-        p.y += (p.vy * sp * dt) / h;
-        if (p.x < 0 || p.x > 1) p.vx *= -1;
-        if (p.y < 0 || p.y > 1) p.vy *= -1;
-        p.r += dt * (1 + chaos * 6);
-        const x = p.x * w;
-        const y = p.y * h;
-        ctx.globalAlpha = chaos * (0.35 + 0.65 * Math.abs(Math.sin(time * 7 + p.s)));
-        ctx.strokeStyle = ctx.fillStyle = p.k === 1 ? '#ff4d12' : p.k === 2 ? '#2f5bd3' : '#141414';
+      for (let i = 0; i < 6; i++) {
+        ctx.globalAlpha = chaos * (0.25 + 0.25 * Math.sin(time * 9 + i * 2));
+        ctx.fillStyle = COLORS[(i + Math.floor(time * 4)) % COLORS.length];
+        ctx.fillRect((i / 6) * w, 0, w / 6 + 1, h);
+      }
+    }
+    ctx.globalAlpha = 0.5 + calm * 0.5;
+    drawSphere(ctx, 'glow', w / 2, h * 0.44, h * lerp(0.4, 0.7, calm));
+    ctx.globalAlpha = 1;
+
+    // confetti
+    if (chaos > 0.02) {
+      for (const c of s.confetti) {
+        c.y = (c.y + c.v * dt) % 1;
+        c.r += dt * 6;
         ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(p.r);
-        if (p.k === 0) ctx.fillRect(-p.s / 2, -p.s / 2, p.s, p.s);
-        else if (p.k === 1) {
-          ctx.beginPath();
-          ctx.arc(0, 0, p.s / 2, 0, Math.PI * 2);
-          ctx.stroke();
-        } else if (p.k === 2) {
-          ctx.beginPath();
-          ctx.moveTo(-p.s, 0);
-          ctx.lineTo(p.s, 0);
-          ctx.stroke();
-        } else ctx.fillText(p.word, 0, 0);
+        ctx.globalAlpha = chaos;
+        ctx.translate(c.x * w, c.y * h);
+        ctx.rotate(c.r);
+        ctx.fillStyle = c.col;
+        ctx.fillRect(-4, -2, 8, 4);
         ctx.restore();
       }
-      ctx.globalAlpha = 1;
     }
 
-    // the one thing that matters
-    ctx.strokeStyle = '#141414';
-    ctx.globalAlpha = 0.85;
-    ctx.lineWidth = 1;
+    // the product
+    const jit = chaos * 10;
+    const px = w / 2 + Math.sin(time * 13) * jit;
+    const py = h * 0.42 + Math.sin(time * 1.2) * 4 * calm + Math.cos(time * 11) * jit;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(Math.sin(time * 7) * 0.25 * chaos);
+    drawHeadphones(ctx, 0, 0, h * lerp(0.26, 0.34, calm));
+    ctx.restore();
+
+    // the name
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const nameY = h * 0.7;
+    if (chaos > 0.05) {
+      for (let k = 0; k < 3; k++) {
+        ctx.save();
+        ctx.globalAlpha = chaos * 0.8;
+        ctx.translate(w / 2 + Math.sin(time * 15 + k) * 14 * chaos, nameY + Math.cos(time * 12 + k) * 8 * chaos);
+        ctx.rotate(Math.sin(time * 5 + k) * 0.2 * chaos);
+        ctx.fillStyle = COLORS[(k + Math.floor(time * 6)) % COLORS.length];
+        ctx.font = `900 ${h * 0.12}px Inter, sans-serif`;
+        ctx.fillText('KORA!!!', 0, 0);
+        ctx.restore();
+      }
+    }
+    ctx.globalAlpha = calm;
+    ctx.fillStyle = '#efe9df';
+    ctx.font = `${h * 0.11}px "Instrument Serif", Georgia, serif`;
+    ctx.fillText('KORA', w / 2, nameY);
+    ctx.font = `600 ${Math.max(8, h * 0.028)}px "IBM Plex Mono", monospace`;
+    ctx.fillStyle = '#b8b2a8';
+    ctx.fillText('HEAR EVERYTHING.', w / 2, nameY + h * 0.08);
+    // one clear call to action
+    const bw = h * 0.26;
+    const bh = h * 0.075;
+    ctx.fillStyle = '#ff5a1f';
     ctx.beginPath();
-    ctx.moveTo(cx, cy - R * 1.35);
-    ctx.lineTo(cx, cy + R * 1.35);
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = '#141414';
-    ctx.beginPath();
-    ctx.arc(cx, cy, lerp(9, 13, s.c), 0, Math.PI * 2);
+    ctx.roundRect(w / 2 - bw / 2, h * 0.86 - bh / 2, bw, bh, bh / 2);
     ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillText('PRE-ORDER', w / 2, h * 0.86 + 1);
+    ctx.globalAlpha = 1;
+
+    // stickers shouting over everything
+    if (chaos > 0.02) {
+      for (const st of s.stickers) {
+        const pulse = 1 + Math.sin(time * 10 + st.ph) * 0.12;
+        ctx.save();
+        ctx.globalAlpha = chaos;
+        ctx.translate(st.x * w, st.y * h);
+        ctx.rotate(st.r + Math.sin(time * 4 + st.ph) * 0.15);
+        ctx.scale(st.s * pulse, st.s * pulse);
+        ctx.font = `900 ${h * 0.045}px Inter, sans-serif`;
+        const tw = ctx.measureText(st.text).width;
+        ctx.fillStyle = st.col;
+        ctx.fillRect(-tw / 2 - 8, -h * 0.035, tw + 16, h * 0.07);
+        ctx.fillStyle = '#141312';
+        ctx.fillText(st.text, 0, 1);
+        ctx.restore();
+      }
+      // ticker
+      ctx.globalAlpha = chaos;
+      ctx.fillStyle = '#ffe23f';
+      ctx.fillRect(0, h - h * 0.07, w, h * 0.07);
+      ctx.fillStyle = '#141312';
+      ctx.font = `900 ${h * 0.035}px Inter, sans-serif`;
+      ctx.textAlign = 'left';
+      const msg = 'BUY NOW • LIMITED OFFER • BUY NOW • DON’T MISS OUT • ';
+      const mw = ctx.measureText(msg).width;
+      const off = (time * 120) % mw;
+      for (let x = -off; x < w; x += mw) ctx.fillText(msg, x, h - h * 0.035);
+      ctx.globalAlpha = 1;
+    }
   });
 
-  const playSequence = () => {
+  const playSequence = async () => {
+    await audio.enable();
     const o = { c: clarity };
     gsap
       .timeline()
-      .to(o, { c: 0, duration: 0.6, ease: 'power2.in', onUpdate: () => setClarity(o.c) })
+      .call(() => audio.air(0.9, 0.85))
+      .to(o, { c: 0, duration: 0.5, ease: 'power2.in', onUpdate: () => setClarity(o.c) })
       .call(() => {
-        audio.impact(0.2, 0.6);
-      }, [], '+=2.2')
-      .call(() => {
-        setCut('hello');
         audio.air(0);
-      })
-      .call(() => setCut('principle'), [], '+=3')
-      .call(() => {
-        setClarity(1);
-        audio.tone(660, 2.2, 0.05);
-      }, [], '+=0.2')
+        audio.impact(0.3, 0.5);
+        setCut('name');
+      }, [], '+=2.4')
+      .call(() => audio.tone(392, 3, 0.05), [], '+=1.2')
+      .call(() => setCut('principle'), [], '+=1.8')
+      .call(() => setClarity(1), [], '+=0.2')
       .call(() => setCut('none'), [], '+=2.4');
   };
 
@@ -149,28 +172,33 @@ export function Contrast() {
       num="06"
       title="Contrast"
       theme="blue"
+      question="What matters most?"
       headline={['Without contrast,', 'there is no focus.']}
-      body={<p className="panel-sub">Contrast creates meaning.</p>}
+      body={<p>The last frame of the KORA ad, two ways. Drag from chaos to clarity: the product, the name and the offer only land when everything else steps back.</p>}
+      forYou={{
+        text: 'When every element animates, shouts and flashes, viewers remember nothing. Space, restraint and one clear movement make your message the moment.',
+        uses: ['End cards', 'Title sequences', 'Banners', 'Pitch decks'],
+      }}
       actions={
         <>
-          <PillButton onClick={playSequence}>Play sequence</PillButton>
           <div className="ct-slider">
             <Slider value={clarity} onChange={setClarity} ends={['Chaos', 'Clarity']} />
           </div>
+          <PillButton icon="play" onClick={playSequence}>
+            Play the hard cut
+          </PillButton>
         </>
       }
     >
-      <div className="fill" ref={wrapRef}>
-        <canvas className="fill" ref={canvasRef} />
-        <p className="ct-note">
-          Same scene.
-          <br />
-          Different emphasis.
-        </p>
-        <div className={`ct-cut ${cut !== 'none' ? 'is-on' : ''}`}>
-          <span className={cut === 'hello' ? 'is-on' : ''}>hello.</span>
-          <span className={cut === 'principle' ? 'is-on' : ''}>Contrast creates meaning.</span>
+      <div className="ct-stage">
+        <div className="ct-frame">
+          <canvas className="fill" ref={canvasRef} />
         </div>
+        <p className="ct-label">{clarity < 0.4 ? 'Everything shouts. What did you remember?' : clarity > 0.8 ? 'One product. One name. One action.' : 'Taking things away…'}</p>
+      </div>
+      <div className={`ct-cut ${cut !== 'none' ? 'is-on' : ''}`}>
+        <span className={cut === 'name' ? 'is-on' : ''}>KORA</span>
+        <span className={cut === 'principle' ? 'is-on' : ''}>Contrast creates meaning.</span>
       </div>
     </Panel>
   );

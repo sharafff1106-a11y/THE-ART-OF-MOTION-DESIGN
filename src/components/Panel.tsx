@@ -19,6 +19,8 @@ export function Panel({
   actions,
   aside,
   headerRight,
+  forYou,
+  question,
   children,
   className = '',
 }: {
@@ -31,6 +33,10 @@ export function Panel({
   actions?: ReactNode;
   aside?: ReactNode;
   headerRight?: ReactNode;
+  /** the client-facing takeaway: what this principle does in a real project */
+  forYou?: { text: string; uses?: string[] };
+  /** the plain-language question this chapter answers */
+  question?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -51,6 +57,7 @@ export function Panel({
         <span className="panel-head-right">{headerRight ?? <GridIcon />}</span>
       </header>
       <div className="panel-copy">
+        {question && <p className="panel-q">{question}</p>}
         <h2 className="panel-h">
           {headline.map((l, i) => (
             <span className="line" key={i}>
@@ -59,6 +66,19 @@ export function Panel({
           ))}
         </h2>
         {body && <div className="panel-body">{body}</div>}
+        {forYou && (
+          <div className="for-you">
+            <span className="for-you-label">For your brand</span>
+            <p>{forYou.text}</p>
+            {forYou.uses && (
+              <ul>
+                {forYou.uses.map((u) => (
+                  <li key={u}>{u}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
         {actions && <div className="panel-actions">{actions}</div>}
       </div>
       <div className="panel-visual">{children}</div>

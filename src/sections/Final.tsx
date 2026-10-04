@@ -12,7 +12,7 @@ export function Final() {
   let i = 0;
   return (
     <section ref={ref} id="final" data-theme="ivory" data-num="13" className={`panel panel--ivory final ${shown ? 'is-in' : ''}`}>
-      <p className="final-label">Gaurav's understanding</p>
+      <p className="final-label">Gaurav · Motion &amp; Sound Designer</p>
       <div className="final-blocks">
         {BLOCKS.map((b, bi) => (
           <h2 key={bi} className="final-h">

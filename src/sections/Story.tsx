@@ -12,6 +12,17 @@ import { drawSphere } from '../motion/sprites';
  * interaction → rhythm → world. No words. Drag the timeline or let it play.
  */
 const BEATS = ['Dot', 'Line', 'Shape', 'Object', 'Weight', 'Contact', 'Rhythm', 'World'];
+/** the story, told in plain words, one line per beat */
+const CAPTIONS = [
+  'Every film starts with one small idea.',
+  'Movement gives it a direction.',
+  'Direction becomes a shape.',
+  'The shape becomes a character you recognise.',
+  'Weight makes it believable. It falls, it lands.',
+  'Someone else arrives. Something happens between them.',
+  'Music gives the moment a heartbeat.',
+  'And now there is a whole world. No words were needed.',
+];
 const AT = [0, 0.12, 0.25, 0.38, 0.5, 0.62, 0.74, 0.86, 1];
 const DURATION = 18;
 
@@ -40,8 +51,7 @@ export function Story() {
   const handleRef = useRef<HTMLDivElement>(null);
   const visible = useInView(wrapRef, { threshold: 0.4 });
   const [beat, setBeat] = useState(0);
-  const [done, setDone] = useState(false);
-  const st = useRef({ p: 0, playing: false, beat: -1, lastBeatTime: 0 });
+  const st = useRef({ p: 0, playing: false, beat: -1, lastBeatTime: 0, audible: false });
 
   useEffect(() => {
     if (visible && st.current.p === 0) st.current.playing = true;
@@ -56,12 +66,11 @@ export function Story() {
     const p = s.p;
     const b = beatOf(p);
     if (b !== s.beat) {
-      if (s.beat !== -1 && b > s.beat) SOUNDS[b]();
+      // heard only when the visitor started or scrubbed the story
+      if (s.audible && s.beat !== -1 && b > s.beat) SOUNDS[b]();
       s.beat = b;
       setBeat(b);
-      setDone(p > 0.96);
     }
-    if (p > 0.96 && !done) setDone(true);
     if (handleRef.current) handleRef.current.style.left = `${p * 100}%`;
 
     const cx = w * 0.5;
@@ -241,6 +250,7 @@ export function Story() {
     const r = trackRef.current!.getBoundingClientRect();
     st.current.p = clamp((clientX - r.left) / r.width);
     st.current.playing = false;
+    st.current.audible = true;
   };
 
   return (
@@ -249,15 +259,21 @@ export function Story() {
       num="10"
       title="Storytelling"
       theme="paper"
+      question="Can it speak without words?"
       headline={['Motion and sound', 'can build entire worlds.']}
-      body={<p className="st-beat">{BEATS[beat]}</p>}
+      body={<p>Two simple shapes, eight steps, no words. Press play and follow the story, or drag the timeline yourself.</p>}
+      forYou={{
+        text: 'This is how a brand film is built: one idea, given shape, weight, contact, rhythm and a world. One decision at a time, until people feel a story without a single word.',
+        uses: ['Brand films', 'Explainers', 'Title sequences'],
+      }}
       actions={
         <PillButton
           onClick={() => {
             st.current.p = 0;
             st.current.beat = -1;
             st.current.playing = true;
-            setDone(false);
+            st.current.audible = true;
+            void audio.enable();
           }}
         >
           Play story
@@ -266,11 +282,12 @@ export function Story() {
     >
       <div className="fill" ref={wrapRef}>
         <canvas className="fill" ref={canvasRef} />
-        <p className={`st-final ${done ? 'is-on' : ''}`}>
-          Motion can tell a story
-          <br />
-          without saying a word.
-        </p>
+        <div className="st-cap" key={beat}>
+          <span>
+            {String(beat + 1).padStart(2, '0')} / 08 · {BEATS[beat]}
+          </span>
+          <p>{CAPTIONS[beat]}</p>
+        </div>
         <div className="st-timeline">
           <span>From a simple idea</span>
           <div

@@ -1,167 +1,154 @@
-import { useRef, useState } from 'react';
-import gsap from 'gsap';
-import { audio } from '../audio/engine';
-import { PillButton, Slider, Toggle, TryPanel, TryRow } from '../components/Controls';
+import { useEffect, useRef, useState } from 'react';
+import { Segment, Toggle, TryPanel, TryRow } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { useCanvasLoop, useLocalPointer } from '../motion/hooks';
-import { damp, lerp } from '../motion/math';
+import { useCanvasLoop } from '../motion/hooks';
+import { damp, rand } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
 /**
  * 02 — ATTENTION
- * A flock of spheres travels a loop in depth. One orange sphere leads with
- * intent. Focus quiets everything else; attraction lets the visitor steal
- * the attention with their own cursor.
+ * A shop page. The same layout in three motion strategies, with a simulated
+ * viewer's eye and a heatmap of where it spends its time.
  */
-const FLOW = 64;
-const DUST = 46;
+type Mode = 'still' | 'all' | 'one';
+const MODES: { id: Mode; label: string }[] = [
+  { id: 'still', label: 'No motion' },
+  { id: 'all', label: 'Everything moves' },
+  { id: 'one', label: 'One thing moves' },
+];
+const NOTES: Record<Mode, string> = {
+  still: 'Nothing leads. The eye wanders, and the offer is just one item among many.',
+  all: 'Everything competes. The eye jumps around and nothing gets read.',
+  one: 'One gentle movement. The eye goes straight to the offer and stays.',
+};
+const ITEMS = [
+  { name: 'Speaker', price: '€129', ico: 'speaker' },
+  { name: 'Earbuds', price: '€89', ico: 'buds' },
+  { name: 'KORA', price: '€249', ico: 'kora', hero: true },
+  { name: 'Cable', price: '€19', ico: 'cable' },
+  { name: 'Case', price: '€29', ico: 'case' },
+  { name: 'Stand', price: '€39', ico: 'stand' },
+];
 
 export function Attention() {
-  const wrapRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ptr = useLocalPointer(wrapRef);
-  const [noise, setNoise] = useState(false);
-  const [speed, setSpeed] = useState(0.45);
-  const [focus, setFocus] = useState(0.55);
-  const [attract, setAttract] = useState(0.25);
-  const params = useRef({ noise: 0, speed: 0.45, focus: 0.55, attract: 0.25 });
-  params.current.speed = speed;
-  params.current.focus = focus;
-  params.current.attract = attract;
-
+  const [mode, setMode] = useState<Mode>('one');
+  const [heat, setHeat] = useState(true);
+  const [found, setFound] = useState<number | null>(null);
+  const modeRef = useRef<Mode>('one');
+  const heatRef = useRef(true);
+  heatRef.current = heat;
   const sim = useRef({
-    t: 0,
-    lead: 0,
-    leadV: 0,
-    noiseAmt: 0,
-    f: 0.55,
-    lastFront: 0,
-    dust: Array.from({ length: DUST }, () => ({ x: Math.random(), y: Math.random(), r: 1 + Math.random() * 2.4, a: Math.random() * 6.28 })),
-    flow: Array.from({ length: FLOW }, (_, i) => ({ o: i / FLOW + Math.random() * 0.01, s: 0.5 + Math.random() * 0.9, jx: 0, jy: 0, px: 0, py: 0, init: false })),
-    trail: [] as { x: number; y: number }[],
+    x: 0,
+    y: 0,
+    tx: 0,
+    ty: 0,
+    next: 0,
+    since: 0,
+    found: false,
+    heat: null as HTMLCanvasElement | null,
+    hw: 0,
+    hh: 0,
+    lastFrame: 0,
   });
 
-  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
+  useEffect(() => {
+    modeRef.current = mode;
     const s = sim.current;
-    const P = params.current;
-    s.noiseAmt = damp(s.noiseAmt, noise ? 1 : 0, 4, dt);
-    s.f = damp(s.f, P.focus, 5, dt);
-    s.t += dt * lerp(0.02, 0.16, P.speed);
+    s.since = performance.now() / 1000;
+    s.found = false;
+    s.next = 0;
+    setFound(null);
+    if (s.heat) s.heat.getContext('2d')!.clearRect(0, 0, s.hw, s.hh);
+  }, [mode]);
 
-    // the leader moves with intent: it surges and rests
-    const surge = 0.5 + 0.5 * Math.sin(time * 1.3);
-    s.leadV = lerp(0.04, 0.3, P.speed) * (0.35 + surge * 1.1);
-    s.lead += dt * s.leadV;
-
-    const cx = w * 0.56;
-    const cy = h * 0.5;
-    const rx = Math.min(w * 0.34, h * 0.62);
-    const ry = Math.min(h * 0.36, w * 0.3);
-    const tilt = -0.32;
-    const loop = (u: number) => {
-      const a = u * Math.PI * 2;
-      const x0 = Math.cos(a) * rx;
-      const y0 = Math.sin(a) * ry * 0.62;
-      const z = Math.sin(a); // depth: -1 back, +1 front
-      return {
-        x: cx + x0 * Math.cos(tilt) - y0 * Math.sin(tilt),
-        y: cy + x0 * Math.sin(tilt) + y0 * Math.cos(tilt) + Math.cos(a * 2 + time * 0.3) * 18,
-        z,
-      };
+  useCanvasLoop(canvasRef, (ctx, w, h) => {
+    const s = sim.current;
+    const frame = frameRef.current;
+    if (!frame) return;
+    if (!s.heat || s.hw !== w || s.hh !== h) {
+      s.heat = document.createElement('canvas');
+      s.heat.width = w;
+      s.heat.height = h;
+      s.hw = w;
+      s.hh = h;
+      s.x = w / 2;
+      s.y = h / 2;
+    }
+    const fr = frame.getBoundingClientRect();
+    const rectOf = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.left - fr.left, y: r.top - fr.top, w: r.width, h: r.height };
     };
+    const cards = [...frame.querySelectorAll('.at-card')].map(rectOf);
+    const cta = rectOf(frame.querySelector('.at-cta')!);
+    const heroCard = cards[2];
+    const now = performance.now() / 1000;
+    const m = modeRef.current;
+    // the loop was paused off screen: start the measurement fresh
+    if (now - s.lastFrame > 0.5) {
+      s.since = now;
+      s.found = false;
+      s.next = 0;
+      setFound(null);
+      s.heat.getContext('2d')!.clearRect(0, 0, w, h);
+    }
+    s.lastFrame = now;
+
+    // where the eye goes next
+    if (now >= s.next) {
+      let t = cards[Math.floor(Math.random() * cards.length)];
+      let dwell = rand(0.9, 1.6);
+      if (m === 'all') {
+        dwell = rand(0.22, 0.45);
+      } else if (m === 'one') {
+        const away = Math.random() < 0.12;
+        t = away ? t : Math.random() < 0.5 ? heroCard : cta;
+        dwell = away ? 0.3 : rand(0.8, 1.4);
+      } else if (Math.random() < 0.15) t = cta;
+      s.tx = t.x + t.w * rand(0.3, 0.7);
+      s.ty = t.y + t.h * rand(0.3, 0.7);
+      s.next = now + dwell;
+    }
+    // saccades: the eye jumps, it does not glide
+    s.x = damp(s.x, s.tx, 16, 1 / 60);
+    s.y = damp(s.y, s.ty, 16, 1 / 60);
+    const inside = (r: { x: number; y: number; w: number; h: number }) => s.x > r.x && s.x < r.x + r.w && s.y > r.y && s.y < r.y + r.h;
+    if (!s.found && (inside(cta) || inside(heroCard))) {
+      s.found = true;
+      setFound(now - s.since);
+    }
+
+    // heat accumulates where the eye rests
+    const hc = s.heat.getContext('2d')!;
+    hc.globalCompositeOperation = 'destination-out';
+    hc.fillStyle = 'rgba(0,0,0,0.006)';
+    hc.fillRect(0, 0, w, h);
+    hc.globalCompositeOperation = 'source-over';
+    hc.globalAlpha = 0.07;
+    drawSphere(hc, 'glow', s.x, s.y, 70);
+    hc.globalAlpha = 1;
 
     ctx.clearRect(0, 0, w, h);
-
-    // dust
-    ctx.fillStyle = '#141414';
-    for (const d of s.dust) {
-      d.a += dt * (0.2 + s.noiseAmt * 2);
-      const nx = Math.cos(d.a) * 6 * (1 + s.noiseAmt * 4);
-      const ny = Math.sin(d.a * 1.3) * 6 * (1 + s.noiseAmt * 4);
-      ctx.globalAlpha = lerp(0.55, 0.12, s.f);
-      ctx.beginPath();
-      ctx.arc(d.x * w + nx, d.y * h + ny, d.r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    // flow
-    const items: { x: number; y: number; r: number; z: number }[] = [];
-    for (const p of s.flow) {
-      const u = p.o + s.t * p.s * 0.6;
-      const q = loop(u % 1);
-      let x = q.x;
-      let y = q.y;
-      if (s.noiseAmt > 0.01) {
-        p.jx = damp(p.jx, (Math.random() - 0.5) * 60, 8, dt);
-        p.jy = damp(p.jy, (Math.random() - 0.5) * 60, 8, dt);
-        x += p.jx * s.noiseAmt;
-        y += p.jy * s.noiseAmt;
-      }
-      if (ptr.current.inside && P.attract > 0.01) {
-        const dx = ptr.current.px - x;
-        const dy = ptr.current.py - y;
-        const d = Math.hypot(dx, dy);
-        const pull = P.attract * Math.exp(-d / 260) * 0.65;
-        x += dx * pull;
-        y += dy * pull;
-      }
-      if (!p.init) {
-        p.px = x;
-        p.py = y;
-        p.init = true;
-      }
-      p.px = damp(p.px, x, 10, dt);
-      p.py = damp(p.py, y, 10, dt);
-      const r = lerp(3, 15, (q.z + 1) / 2) * lerp(1, 0.75, s.f);
-      items.push({ x: p.px, y: p.py, r, z: q.z });
-    }
-    items.sort((a, b) => a.z - b.z);
-
-    const lu = s.lead % 1;
-    const L = loop(lu);
-    const lr = lerp(14, 30, (L.z + 1) / 2) * lerp(0.9, 1.25, s.f);
-
-    // leader trail
-    s.trail.unshift({ x: L.x, y: L.y });
-    if (s.trail.length > 70) s.trail.pop();
-    ctx.strokeStyle = '#141414';
-    ctx.lineWidth = 1;
-    ctx.globalAlpha = 0.35;
-    ctx.beginPath();
-    s.trail.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)));
-    ctx.stroke();
-
-    let leaderDrawn = false;
-    const drawLeader = () => {
-      ctx.globalAlpha = 0.35 + s.f * 0.65;
-      drawSphere(ctx, 'glow', L.x, L.y, lr * lerp(2.2, 4.2, s.f));
+    if (heatRef.current) {
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(s.heat, 0, 0);
       ctx.globalAlpha = 1;
-      drawSphere(ctx, 'orange', L.x, L.y, lr);
-      leaderDrawn = true;
-    };
-    for (const it of items) {
-      if (!leaderDrawn && it.z > L.z) drawLeader();
-      ctx.globalAlpha = lerp(1, 0.28, s.f) * lerp(0.55, 1, (it.z + 1) / 2);
-      drawSphere(ctx, 'black', it.x, it.y, it.r);
     }
-    if (!leaderDrawn) drawLeader();
-    ctx.globalAlpha = 1;
-
-    // you hear the leader as it passes closest to you
-    const front = L.z > 0.98 ? 1 : 0;
-    if (front && !s.lastFront) audio.wood(1300, 0.12 + s.f * 0.2, { pan: (L.x / w) * 1.6 - 0.8 });
-    s.lastFront = front;
+    // the simulated eye
+    ctx.strokeStyle = '#ff5a1f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 13, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ff5a1f';
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '600 9px "IBM Plex Mono", monospace';
+    ctx.fillText('EYE', s.x + 17, s.y + 3);
   });
-
-  const playDemo = () => {
-    const o = { f: 0, a: 0 };
-    gsap
-      .timeline()
-      .to(o, { f: 0, a: 0, duration: 0.01, onComplete: () => setNoise(true) })
-      .to(o, { f: 1, duration: 2.6, ease: 'power2.inOut', onUpdate: () => setFocus(o.f), onStart: () => setNoise(false) }, '+=1.4')
-      .to(o, { a: 1, duration: 1.4, ease: 'power2.out', onUpdate: () => setAttract(o.a) }, '+=0.8')
-      .to(o, { f: 0.55, a: 0.25, duration: 1.6, ease: 'power2.inOut', onUpdate: () => (setFocus(o.f), setAttract(o.a)) }, '+=1.6');
-  };
 
   return (
     <Panel
@@ -169,31 +156,55 @@ export function Attention() {
       num="02"
       title="Attention"
       theme="paper"
-      headline={['Motion', 'Directs', 'Attention.']}
-      body={<p>It guides the eye, creates hierarchy and helps the important feel important.</p>}
-      actions={<PillButton onClick={playDemo}>Play demo</PillButton>}
+      question="Where will people look?"
+      headline={['Motion', 'directs', 'attention.']}
+      body={<p>Same page. Same products. Only the motion changes. Watch where the eye goes.</p>}
+      forYou={{
+        text: 'Use motion to lead customers to what matters: the offer, the new feature, the next step. When everything moves, nothing stands out.',
+        uses: ['Ads', 'Websites', 'App UI', 'Social posts'],
+      }}
       aside={
         <TryPanel>
-          <TryRow label="Add noise">
-            <Toggle on={noise} onChange={setNoise} />
+          <Segment options={MODES} value={mode} onChange={setMode} />
+          <p className="at-note">{NOTES[mode]}</p>
+          <TryRow label="Heatmap">
+            <Toggle on={heat} onChange={setHeat} />
           </TryRow>
-          <TryRow label="Speed">
-            <Slider value={speed} onChange={setSpeed} />
-          </TryRow>
-          <TryRow label="Focus">
-            <Slider value={focus} onChange={setFocus} />
-          </TryRow>
-          <TryRow label="Attraction">
-            <Slider value={attract} onChange={setAttract} />
-          </TryRow>
-          <p className="try-note">Move your cursor over the field to pull the crowd.</p>
+          <div className="at-result">
+            <span>Time to find the offer</span>
+            <b>{found === null ? (mode === 'one' ? '…' : 'searching…') : `${found.toFixed(1)} s`}</b>
+          </div>
+          <p className="try-note">The eye is a simple simulation based on how motion pulls attention.</p>
         </TryPanel>
       }
     >
-      <div className="fill" ref={wrapRef}>
-        <canvas className="fill" ref={canvasRef} />
+      <div className={`at-frame is-${mode}`} ref={frameRef}>
+        <div className="at-bar">
+          <span className="at-logo">sound/shop</span>
+          <span className="at-nav">
+            <i />
+            <i />
+            <i />
+          </span>
+        </div>
+        <div className="at-grid">
+          {ITEMS.map((it, i) => (
+            <div key={it.name} className={`at-card ${it.hero ? 'at-card--hero' : ''}`} style={{ ['--k' as string]: i }}>
+              {it.hero && <span className="at-badge">New</span>}
+              <div className={`at-ico at-ico--${it.ico}`}>
+                <span />
+                <span />
+              </div>
+              <b>{it.name}</b>
+              <span className="at-price">{it.price}</span>
+            </div>
+          ))}
+        </div>
+        <button className="at-cta" tabIndex={-1}>
+          Pre-order KORA
+        </button>
+        <canvas className="fill at-canvas" ref={canvasRef} />
       </div>
     </Panel>
   );
 }
-

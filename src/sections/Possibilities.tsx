@@ -107,6 +107,7 @@ export function Possibilities() {
       num="12"
       title="The possibilities"
       theme="night"
+      question="Where can it go?"
       headline={['This is just', 'the beginning.']}
       body={<p>What matters is not how much you can make move. It is what you make people feel.</p>}
       actions={
@@ -123,7 +124,7 @@ export function Possibilities() {
               onPointerEnter={() => {
                 setHover(i);
                 target.current = a;
-                audio.tone(330 * Math.pow(2, i / 8), 1.2, 0.03);
+                audio.tone(330 * Math.pow(2, i / 8), 0.9, 0.018);
               }}
             >
               {a.id}

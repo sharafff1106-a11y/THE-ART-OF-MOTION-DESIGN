@@ -1,73 +1,125 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { Segment, Slider, Toggle } from '../components/Controls';
+import { PillButton, Segment, Slider } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { useCanvasLoop, useSoundEnabled } from '../motion/hooks';
-import { clamp, lerp, rand } from '../motion/math';
-import { drawSphere } from '../motion/sprites';
+import { useCanvasLoop, useInView, useSoundEnabled } from '../motion/hooks';
+import { drawHeadphones } from '../motion/kora';
+import { clamp, easeOut, lerp, rand } from '../motion/math';
 
 /**
  * 05 — RHYTHM
- * Hits are placed in space along one bar. Each one excites the spectrum
- * and the ribbon at its position — the eye and the ear read the same pattern.
+ * A five-shot KORA ad. Every hit in the music is a cut. Change the rhythm
+ * and the same footage changes character — or cut off the beat and feel
+ * the edit fall apart.
  */
-type Mode = 'regular' | 'syncopated' | 'triplet' | 'human' | 'chaotic';
+type Mode = 'regular' | 'syncopated' | 'triplet' | 'human' | 'offbeat';
 interface Hit {
   t: number;
   v: number;
   accent: boolean;
-  p: number;
 }
-const S16 = (steps: number[], acc: number[]): Hit[] => steps.map((s) => ({ t: s / 16, v: acc.includes(s) ? 1 : 0.7, accent: acc.includes(s), p: 1 }));
+const S16 = (steps: number[], acc: number[]): Hit[] => steps.map((s) => ({ t: s / 16, v: acc.includes(s) ? 1 : 0.7, accent: acc.includes(s) }));
+const regular = (): Hit[] => Array.from({ length: 4 }, (_, i) => ({ t: i / 4, v: i % 2 ? 0.7 : 0.95, accent: i % 2 === 0 }));
 const GEN: Record<Mode, () => Hit[]> = {
-  regular: () => Array.from({ length: 8 }, (_, i) => ({ t: i / 8, v: i % 2 ? 0.62 : 0.88, accent: i % 4 === 0, p: 1 })),
-  syncopated: () => S16([0, 3, 6, 10, 12, 14], [0, 6, 12]),
-  triplet: () => Array.from({ length: 12 }, (_, i) => ({ t: i / 12, v: i % 3 ? 0.55 : 0.95, accent: i % 6 === 0, p: i % 3 ? 1.2 : 1 })),
-  human: () =>
-    Array.from({ length: 8 }, (_, i) => ({
-      t: clamp(i / 8 + (i ? rand(-0.012, 0.012) : rand(0, 0.006))),
-      v: (i % 2 ? 0.55 : 0.8) + rand(-0.12, 0.12),
-      accent: i % 4 === 0,
-      p: 1 + rand(-0.03, 0.03),
-    })),
-  chaotic: () =>
-    Array.from({ length: Math.round(rand(5, 11)) }, () => ({ t: Math.random(), v: rand(0.3, 1), accent: Math.random() < 0.25, p: rand(0.5, 1.8) })).sort(
-      (a, b) => a.t - b.t,
-    ),
+  regular,
+  syncopated: () => S16([0, 3, 6, 10, 12], [0, 6, 12]),
+  triplet: () => Array.from({ length: 6 }, (_, i) => ({ t: i / 6, v: i % 3 ? 0.6 : 0.95, accent: i % 3 === 0 })),
+  human: () => regular().map((h, i) => ({ ...h, t: clamp(h.t + (i ? rand(-0.018, 0.018) : 0)), v: h.v + rand(-0.15, 0.1) })),
+  offbeat: regular,
 };
 const MODES: { id: Mode; label: string }[] = [
   { id: 'regular', label: 'Regular' },
   { id: 'syncopated', label: 'Syncopated' },
   { id: 'triplet', label: 'Triplet' },
   { id: 'human', label: 'Human' },
-  { id: 'chaotic', label: 'Chaotic' },
+  { id: 'offbeat', label: 'Off the beat' },
 ];
-const BARS = 96;
-
-let barSprite: HTMLCanvasElement | null = null;
-function getBarSprite() {
-  if (barSprite) return barSprite;
-  const c = document.createElement('canvas');
-  c.width = 4;
-  c.height = 256;
-  const g = c.getContext('2d')!;
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, 'rgba(255,90,30,0)');
-  grad.addColorStop(0.7, 'rgba(255,120,50,1)');
-  grad.addColorStop(1, 'rgba(255,90,30,0)');
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 4, 256);
-  return (barSprite = c);
-}
+const NOTES: Record<Mode, string> = {
+  regular: 'Steady and confident. Good for product demos and explainers.',
+  syncopated: 'Cuts that skip the expected beat feel modern and energetic. Fashion, sport, social.',
+  triplet: 'A rolling, swinging feel. Playful brands and music content.',
+  human: 'Small imperfections feel organic and handmade. Lifestyle and documentary.',
+  offbeat: 'Same shots, same music, cuts slightly late. It feels wrong straight away.',
+};
 const LOOKAHEAD = 0.12;
+const SHOTS = 5;
+
+function drawShot(ctx: CanvasRenderingContext2D, shot: number, x: number, y: number, w: number, h: number, age: number, time: number) {
+  const push = 1 + 0.07 * (1 - easeOut(clamp(age / 0.5)));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  ctx.translate(cx, cy);
+  ctx.scale(push, push);
+  ctx.translate(-cx, -cy);
+  const serif = (size: number) => `${size}px "Instrument Serif", Georgia, serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  if (shot === 0) {
+    ctx.fillStyle = '#ff5a1f';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#fff5ec';
+    ctx.font = serif(h * 0.5);
+    ctx.fillText('New.', cx, cy);
+  } else if (shot === 1) {
+    ctx.fillStyle = '#141312';
+    ctx.fillRect(x, y, w, h);
+    drawHeadphones(ctx, cx, cy - h * 0.02, h * 0.5);
+  } else if (shot === 2) {
+    ctx.fillStyle = '#efe9df';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#141312';
+    ctx.font = serif(h * 0.36);
+    ctx.fillText('Hear', cx, cy - h * 0.13);
+    ctx.font = `italic ${serif(h * 0.36)}`;
+    ctx.fillStyle = '#ff5a1f';
+    ctx.fillText('everything.', cx, cy + h * 0.2);
+  } else if (shot === 3) {
+    ctx.fillStyle = '#141312';
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#ff5a1f';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const r = ((i / 6 + time * 0.3) % 1) * h * 0.7;
+      ctx.globalAlpha = 1 - r / (h * 0.7);
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  } else {
+    ctx.fillStyle = '#0d0c0b';
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#efe9df';
+    ctx.font = serif(h * 0.3);
+    ctx.fillText('KORA', cx, cy - h * 0.04);
+    ctx.font = `600 ${Math.max(8, h * 0.045)}px "IBM Plex Mono", monospace`;
+    ctx.fillStyle = '#ff7a45';
+    ctx.fillText('PRE-ORDER NOW', cx, cy + h * 0.22);
+  }
+  ctx.restore();
+}
 
 export function Rhythm() {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visible = useInView(wrapRef, { threshold: 0.35 });
   const soundOn = useSoundEnabled();
-  const [mode, setModeState] = useState<Mode>('syncopated');
-  const [bpm, setBpm] = useState(100);
-  const modeRef = useRef<Mode>('syncopated');
-  const bpmRef = useRef(100);
+  const [mode, setModeState] = useState<Mode>('regular');
+  const [bpm, setBpm] = useState(104);
+  const [playing, setPlaying] = useState(false);
+  const modeRef = useRef<Mode>('regular');
+  const bpmRef = useRef(104);
+  const playingRef = useRef(false);
+  playingRef.current = playing && soundOn && visible;
+
+  // leaving the chapter stops the music
+  useEffect(() => {
+    if (!visible) setPlaying(false);
+  }, [visible]);
 
   const seq = useRef({
     barStart: -1,
@@ -75,8 +127,10 @@ export function Rhythm() {
     idx: 0,
     hitAt: [] as number[],
     pending: [] as { time: number; i: number }[],
-    energy: new Float32Array(BARS),
-    flicker: new Float32Array(BARS),
+    cuts: [] as number[],
+    shot: 0,
+    cutAt: 0,
+    energy: 0,
   });
 
   const regen = (reset: boolean) => {
@@ -85,6 +139,7 @@ export function Rhythm() {
     s.hitAt = s.bar.map(() => -10);
     if (reset) {
       s.pending = [];
+      s.cuts = [];
       const now = performance.now() / 1000;
       const bd = 240 / bpmRef.current;
       s.idx = s.bar.findIndex((h) => s.barStart + h.t * bd > now + LOOKAHEAD);
@@ -93,12 +148,12 @@ export function Rhythm() {
   };
 
   const play = (h: Hit, time: number) => {
-    if (!audio.live) return;
+    if (!playingRef.current || !audio.live) return;
     const when = audio.at(time);
-    const m = modeRef.current;
-    if (h.accent && m !== 'chaotic') audio.kick(h.v * 0.5, { when });
-    const f = (m === 'triplet' ? 2100 : 1800) * h.p;
-    audio.wood(h.accent ? f * 0.75 : f, h.v * 0.3, { when, pan: h.t * 1.4 - 0.7 });
+    if (h.accent) audio.kick(h.v * 0.55, { when });
+    audio.wood(h.accent ? 1300 : 1900, h.v * 0.24, { when, pan: h.t * 1.2 - 0.6 });
+    // a soft bass note under each bar
+    if (h.t === 0) audio.tone(55, (240 / bpmRef.current) * 0.9, 0.08, { when, send: 0.1 });
   };
 
   useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
@@ -117,6 +172,8 @@ export function Rhythm() {
         if (at < now + LOOKAHEAD) {
           play(hit, at);
           s.pending.push({ time: at, i: s.idx });
+          // off the beat: the picture cuts late
+          s.cuts.push(at + (modeRef.current === 'offbeat' ? bd * rand(0.07, 0.12) : 0));
           s.idx++;
           continue;
         }
@@ -131,97 +188,77 @@ export function Rhythm() {
       }
       break;
     }
-
-    const x0 = w * 0.04;
-    const x1 = w * 0.96;
-    const L = x1 - x0;
-    const cy = h * 0.52;
-
-    // hits excite the spectrum around their position
     for (let i = s.pending.length - 1; i >= 0; i--) {
       const p = s.pending[i];
       if (p.time > now) continue;
       s.hitAt[p.i] = p.time;
-      const hit = s.bar[p.i];
-      if (hit) {
-        const c = hit.t * (BARS - 1);
-        for (let b = 0; b < BARS; b++) {
-          const d = (b - c) / 4.5;
-          s.energy[b] = Math.min(1.4, s.energy[b] + Math.exp(-d * d) * hit.v);
-        }
-      }
+      s.energy = 1;
       s.pending.splice(i, 1);
     }
-    const decay = Math.exp(-dt * 4.2);
-    for (let b = 0; b < BARS; b++) {
-      s.energy[b] *= decay;
-      s.flicker[b] = lerp(s.flicker[b], Math.random(), 0.15);
+    for (let i = s.cuts.length - 1; i >= 0; i--) {
+      if (s.cuts[i] > now) continue;
+      s.shot = (s.shot + 1) % SHOTS;
+      s.cutAt = s.cuts[i];
+      s.cuts.splice(i, 1);
     }
-    const energyAt = (x: number) => {
-      const f = clamp((x - x0) / L) * (BARS - 1);
-      const i = Math.floor(f);
-      return lerp(s.energy[i], s.energy[Math.min(BARS - 1, i + 1)], f - i);
-    };
+    s.energy *= Math.exp(-dt * 6);
 
     ctx.clearRect(0, 0, w, h);
+    // monitor
+    const mw = Math.min(w * 0.86, (h * 0.6 * 16) / 9);
+    const mh = (mw * 9) / 16;
+    const mx = (w - mw) / 2;
+    const my = h * 0.06;
+    drawShot(ctx, s.shot, mx, my, mw, mh, now - s.cutAt, time);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.strokeRect(mx + 0.5, my + 0.5, mw - 1, mh - 1);
+    ctx.font = '600 9px "IBM Plex Mono", monospace';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillText(`SHOT ${s.shot + 1}/${SHOTS}`, mx, my + mh + 16);
+    ctx.textAlign = 'right';
+    ctx.fillText(`${Math.round(bpmRef.current)} BPM`, mx + mw, my + mh + 16);
 
-    // spectrum
-    const sprite = getBarSprite();
-    ctx.globalCompositeOperation = 'lighter';
-    const bw = L / BARS;
-    for (let b = 0; b < BARS; b++) {
-      const e = s.energy[b];
-      const hh = (10 + s.flicker[b] * 22 + e * h * 0.42) * (0.65 + 0.35 * Math.sin(b * 0.7));
-      const x = x0 + b * bw;
-      ctx.globalAlpha = Math.min(1, 0.35 + e * 0.65);
-      ctx.drawImage(sprite, x, cy - hh, Math.max(1, bw * 0.45), hh * 1.4);
-    }
-    ctx.globalAlpha = 1;
-
-    // ribbon strands
-    ctx.lineWidth = 1;
-    for (let k = 0; k < 6; k++) {
-      ctx.strokeStyle = `rgba(255,255,255,${0.1 + k * 0.035})`;
-      ctx.beginPath();
-      for (let x = x0; x <= x1; x += 6) {
-        const e = energyAt(x);
-        const env = Math.sin(((x - x0) / L) * Math.PI);
-        const y = cy + Math.sin(x * 0.012 + time * 1.4 + k * 0.35) * (14 + e * 60) * env + Math.sin(x * 0.03 - time * 2 + k) * 4 * env;
-        if (x === x0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
-      }
-      ctx.stroke();
-    }
-    ctx.globalCompositeOperation = 'source-over';
-
-    // baseline and beat dots
-    ctx.fillStyle = '#fff';
-    ctx.globalAlpha = 0.25;
-    ctx.fillRect(x0, cy + h * 0.2, L, 1);
-    s.bar.forEach((hit, i) => {
-      const x = x0 + hit.t * L;
-      const age = now - s.hitAt[i];
-      const pulse = age >= 0 && age < 2 ? Math.exp(-age * 6) : 0;
-      const r = lerp(2.5, 5.5, hit.v) * (1 + pulse * 1.4);
-      ctx.globalAlpha = 0.5 + pulse * 0.5;
-      if (pulse > 0.05) {
-        drawSphere(ctx, 'glow', x, cy, r * 6 * pulse + r);
-      }
-      ctx.fillStyle = pulse > 0.4 ? '#ff7a3d' : '#ffffff';
-      ctx.beginPath();
-      ctx.arc(x, cy, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.globalAlpha = 0.4;
-      ctx.fillRect(x, cy + h * 0.2 - 4, 1, 8);
-    });
-
-    // the rider
+    // the music timeline: beats below, cuts above
+    const tx = mx;
+    const tw = mw;
+    const ty = my + mh + 64;
     const phase = clamp((now - s.barStart) / bd);
-    const px = x0 + phase * L;
-    const env = Math.sin(phase * Math.PI);
-    const py = cy + Math.sin(px * 0.012 + time * 1.4 + 0.9) * (14 + energyAt(px) * 60) * env;
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(tx, ty, tw, 1);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillText('MUSIC', tx, ty + 26);
+    ctx.fillText('CUTS', tx, ty - 18);
+    s.bar.forEach((hit, i) => {
+      const x = tx + hit.t * tw;
+      const age = now - s.hitAt[i];
+      const pulse = age >= 0 && age < 2 ? Math.exp(-age * 7) : 0;
+      ctx.fillStyle = pulse > 0.3 ? '#ff7a3d' : 'rgba(255,255,255,0.75)';
+      ctx.beginPath();
+      ctx.arc(x, ty, lerp(3, 6, hit.v) * (1 + pulse), 0, Math.PI * 2);
+      ctx.fill();
+      // where the picture cuts relative to this beat
+      const off = modeRef.current === 'offbeat' ? 0.095 : 0;
+      ctx.fillStyle = modeRef.current === 'offbeat' ? '#ff5a1f' : 'rgba(255,255,255,0.75)';
+      const cx = tx + (hit.t + off) * tw;
+      ctx.beginPath();
+      ctx.moveTo(cx - 4, ty - 12);
+      ctx.lineTo(cx + 4, ty - 12);
+      ctx.lineTo(cx, ty - 5);
+      ctx.fill();
+    });
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(tx + phase * tw, ty - 20, 1, 40);
+    // level meter
+    ctx.fillStyle = '#ff5a1f';
+    ctx.globalAlpha = 0.85;
+    for (let i = 0; i < 24; i++) {
+      const lv = s.energy * Math.exp(-i / 9) * (0.6 + 0.4 * Math.sin(i * 1.3 + time * 20));
+      const bh = 2 + lv * 26;
+      ctx.fillRect(tx + tw - 4 - i * 5, ty + 40 - bh, 3, bh);
+    }
     ctx.globalAlpha = 1;
-    drawSphere(ctx, 'white', px, py, 11);
   });
 
   return (
@@ -230,26 +267,29 @@ export function Rhythm() {
       num="05"
       title="Rhythm"
       theme="dark"
-      className="panel--wide-visual"
-      headline={['Motion and sound', 'speak the same language.']}
-      headerRight={<Toggle on={soundOn} onChange={(v) => (v ? void audio.enable() : audio.disable())} labels={['Visual', 'Sound']} />}
+      question="Does the edit feel right?"
+      headline={['Cut to', 'the beat.']}
+      body={<p>A short KORA ad: five shots, cut on every beat of the music. Change the rhythm and watch the same footage change character.</p>}
+      forYou={{
+        text: 'Edits, transitions and kinetic type that land on the music feel intentional and premium. Off the beat, the same footage feels amateur.',
+        uses: ['Social ads', 'Launch films', 'Music videos'],
+      }}
       actions={
         <div className="rh-actions">
-          <Segment
-            boxed
-            options={MODES}
-            value={mode}
-            onChange={(m) => {
-              modeRef.current = m;
-              setModeState(m);
-              regen(true);
+          <PillButton
+            icon="none"
+            onClick={async () => {
+              await audio.enable();
+              setPlaying((p) => !p);
             }}
-          />
+          >
+            {playing && soundOn ? '❚❚  Pause music' : '▶  Play with music'}
+          </PillButton>
           <div className="rh-tempo">
             <Slider
               label="Tempo"
-              min={60}
-              max={160}
+              min={70}
+              max={150}
               value={bpm}
               format={(v) => `${Math.round(v)} BPM`}
               onChange={(v) => {
@@ -261,7 +301,22 @@ export function Rhythm() {
         </div>
       }
     >
-      <canvas className="fill" ref={canvasRef} />
+      <div className="fill" ref={wrapRef}>
+        <canvas className="fill" ref={canvasRef} />
+        <div className="rh-modes">
+          <Segment
+            boxed
+            options={MODES}
+            value={mode}
+            onChange={(m) => {
+              modeRef.current = m;
+              setModeState(m);
+              regen(true);
+            }}
+          />
+          <p className={mode === 'offbeat' ? 'is-warn' : ''}>{NOTES[mode]}</p>
+        </div>
+      </div>
     </Panel>
   );
 }

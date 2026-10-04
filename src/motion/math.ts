@@ -8,3 +8,4 @@ export const smoothstep = (a: number, b: number, v: number) => {
 /** Frame-rate independent exponential approach. */
 export const damp = (a: number, b: number, lambda: number, dt: number) => lerp(a, b, 1 - Math.exp(-lambda * dt));
 export const rand = (a = 0, b = 1) => a + Math.random() * (b - a);
+export const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
