@@ -6,6 +6,14 @@ export let lenis: Lenis | null = null;
 export function startSmoothScroll() {
   if (lenis) return lenis;
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return null;
+  // inside an embedded viewer the host owns scrolling; leave it native
+  let embedded = true;
+  try {
+    embedded = window.self !== window.top;
+  } catch {
+    embedded = true;
+  }
+  if (embedded) return null;
   lenis = new Lenis({ lerp: 0.11, wheelMultiplier: 0.95, smoothWheel: true });
   const raf = (t: number) => {
     lenis!.raf(t);

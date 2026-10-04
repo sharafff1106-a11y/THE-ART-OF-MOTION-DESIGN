@@ -38,8 +38,10 @@ export function useCanvasLoop(ref: RefObject<HTMLCanvasElement>, frame: Frame, m
       frameRef.current(ctx, w, h, dt, now / 1000);
       raf = requestAnimationFrame(loop);
     };
+    let reported = false;
     const io = new IntersectionObserver(
       ([e]) => {
+        reported = true;
         if (e.isIntersecting && !raf) {
           last = performance.now();
           raf = requestAnimationFrame(loop);
@@ -51,9 +53,17 @@ export function useCanvasLoop(ref: RefObject<HTMLCanvasElement>, frame: Frame, m
       { rootMargin: '80px' },
     );
     io.observe(canvas);
+    // if the observer never reports (some embedded viewers), run anyway
+    const fallback = window.setTimeout(() => {
+      if (!reported && !raf) {
+        last = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
+    }, 1200);
     return () => {
       ro.disconnect();
       io.disconnect();
+      window.clearTimeout(fallback);
       cancelAnimationFrame(raf);
     };
   }, [ref, maxDpr]);
@@ -65,8 +75,10 @@ export function useInView(ref: RefObject<Element>, { threshold = 0, rootMargin =
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    let reported = false;
     const io = new IntersectionObserver(
       ([e]) => {
+        reported = true;
         if (e.isIntersecting) {
           setInView(true);
           if (once) io.disconnect();
@@ -75,7 +87,14 @@ export function useInView(ref: RefObject<Element>, { threshold = 0, rootMargin =
       { threshold, rootMargin },
     );
     io.observe(el);
-    return () => io.disconnect();
+    // content must never stay hidden because the observer is silent
+    const fallback = window.setTimeout(() => {
+      if (!reported) setInView(true);
+    }, 1200);
+    return () => {
+      io.disconnect();
+      window.clearTimeout(fallback);
+    };
   }, [ref, threshold, rootMargin, once]);
   return inView;
 }

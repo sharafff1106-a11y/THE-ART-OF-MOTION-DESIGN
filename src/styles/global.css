@@ -619,3 +619,11 @@ p { margin: 0; }
 @media (max-width: 900px) { .ag-board { grid-template-columns: repeat(5, 1fr); } .ag-bar { grid-template-columns: 100px 1fr 44px; } }
 .panel-body { display: flex; flex-direction: column; gap: 14px; }
 .ag-board { min-height: 320px; align-content: center; }
+
+/* robust sizing: never let viewport units run away inside embedded frames */
+.panel { min-height: clamp(640px, 100svh, 1000px); }
+.panel-visual { min-height: clamp(380px, 62vh, 640px); }
+.hero--type { min-height: clamp(600px, 100svh, 960px); }
+@media (max-width: 900px) {
+  .panel-visual { min-height: clamp(360px, 56vh, 560px); }
+}
