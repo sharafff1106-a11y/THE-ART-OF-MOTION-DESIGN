@@ -33,7 +33,7 @@ export function useCanvasLoop(ref: RefObject<HTMLCanvasElement>, frame: Frame, m
     let raf = 0;
     let last = performance.now();
     const loop = (now: number) => {
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const dt = Math.max(0, Math.min(0.05, (now - last) / 1000));
       last = now;
       frameRef.current(ctx, w, h, dt, now / 1000);
       raf = requestAnimationFrame(loop);

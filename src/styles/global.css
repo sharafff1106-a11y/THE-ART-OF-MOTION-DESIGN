@@ -281,8 +281,8 @@ p { margin: 0; }
 }
 .ct-cut.is-on { opacity: 1; visibility: visible; transition: none; }
 .ct-cut span { grid-area: 1 / 1; font-family: var(--serif); color: #111; opacity: 0; transition: opacity 1.2s var(--ease-io); }
-.ct-cut span:first-child { font-family: var(--sans); font-size: 15px; }
-.ct-cut span:last-child { font-size: clamp(36px, 5vw, 80px); }
+.ct-cut span:first-child { font-size: clamp(56px, 9vw, 150px); letter-spacing: 0.04em; }
+.ct-cut span:last-child { font-size: clamp(30px, 4.2vw, 68px); font-style: italic; text-align: center; padding: 0 16px; }
 .ct-cut span.is-on { opacity: 1; }
 
 /* ───────────── 07 sound ───────────── */

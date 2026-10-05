@@ -50,6 +50,13 @@ export function Attention() {
     const s = st.current;
     const B = brandStore.get();
     const moving = modeRef.current === 'moving';
+    // the canvas can report no size before layout; never let the feed position go bad
+    if (!(w > 0 && h > 0)) return;
+    if (!Number.isFinite(s.y) || !Number.isFinite(s.v)) {
+      s.y = 0;
+      s.v = 1;
+      s.cue = true;
+    }
 
     ctx.fillStyle = '#e9e5df';
     ctx.fillRect(0, 0, w, h);

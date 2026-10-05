@@ -3,14 +3,14 @@ import gsap from 'gsap';
 import { audio } from '../audio/engine';
 import { PillButton, Slider } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { brandStore } from '../brand/brands';
+import { brandStore, useBrand } from '../brand/brands';
 import { useCanvasLoop } from '../motion/hooks';
 import { damp, lerp, rand, smoothstep } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
 /**
  * 06 — CONTRAST
- * The end card of the KORA ad, two ways. In chaos every element shouts;
+ * The end card of the client's ad, two ways. In chaos every element shouts;
  * in clarity one product, one name, one offer, and space around them.
  */
 const STICKERS = ['SALE!', '50% OFF', 'NEW!!', 'LIMITED', 'BUY NOW', 'HOT', 'WOW', 'FREE SHIP', '★★★', 'LAST DAY'];
@@ -18,6 +18,7 @@ const COLORS = ['#ffe23f', '#ff3fa4', '#2fd3ff', '#7cff4f', '#ff5a1f', '#ffffff'
 
 export function Contrast() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const brand = useBrand();
   const [clarity, setClarity] = useState(0.3);
   const [cut, setCut] = useState<'none' | 'name' | 'principle'>('none');
   const target = useRef(0.3);
@@ -193,8 +194,8 @@ export function Contrast() {
         <p className="ct-label">{clarity < 0.4 ? 'Everything shouts. What did you remember?' : clarity > 0.8 ? 'One product. One name. One action.' : 'Taking things away…'}</p>
       </div>
       <div className={`ct-cut ${cut !== 'none' ? 'is-on' : ''}`}>
-        <span className={cut === 'name' ? 'is-on' : ''}>KORA</span>
-        <span className={cut === 'principle' ? 'is-on' : ''}>Contrast creates meaning.</span>
+        <span className={cut === 'name' ? 'is-on' : ''}>{brand.name}</span>
+        <span className={cut === 'principle' ? 'is-on' : ''}>{brand.tagline}</span>
       </div>
     </Panel>
   );
