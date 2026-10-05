@@ -107,9 +107,8 @@ export function Possibilities() {
       num="12"
       title="The possibilities"
       theme="night"
-      question="Where can it go?"
       headline={['This is just', 'the beginning.']}
-      body={<p>What matters is not how much you can make move. It is what you make people feel.</p>}
+      body={<p>Where motion and sound can take your brand.</p>}
       actions={
         <button className="next-link" onClick={() => scrollToId('final')}>
           Next <span>→</span>

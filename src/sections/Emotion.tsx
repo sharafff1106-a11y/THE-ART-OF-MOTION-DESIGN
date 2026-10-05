@@ -1,178 +1,186 @@
-import { CSSProperties, useRef, useState } from 'react';
-import { RadioList } from '../components/Controls';
+import { useRef, useState } from 'react';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
 import { useCanvasLoop } from '../motion/hooks';
-import { damp } from '../motion/math';
+import { drawHeadphones, serif } from '../motion/kora';
+import { rand } from '../motion/math';
 import { EMOTIONS, EmotionId } from './emotions';
 
 /**
  * 08 — EMOTION
- * One soft form. Only its behaviour changes: speed, amplitude, rhythm,
- * colour, height and sound. Drawn in 2D so it runs on every device.
+ * The same KORA product shot, seven moods. Light, colour, movement, type
+ * and sound change; the product does not.
  */
-const hex = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
-const rgba = (c: number[], a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
-const N = 120;
+type Particles = 'bokeh' | 'flicker' | 'rings' | 'confetti' | 'sparkle' | 'rain' | 'motes';
+const LOOK: Record<EmotionId, { top: string; bottom: string; glow: string; band: string; cup: string; tag: string; font: string; ink: string; p: Particles; float: number; speed: number; sway: number; jitter: number; bounce: number; pulse: number; scale: number }> = {
+  calm: { top: '#cfdcf2', bottom: '#eef1f6', glow: 'rgba(255,255,255,0.7)', band: '#f6f4ef', cup: '#8fb4ff', tag: 'Find your quiet.', font: 'italic', ink: '#3b4a66', p: 'bokeh', float: 0.025, speed: 0.6, sway: 0.03, jitter: 0, bounce: 0, pulse: 0, scale: 1 },
+  nervous: { top: '#2b3236', bottom: '#151a1c', glow: 'rgba(160,190,200,0.18)', band: '#c9d1d4', cup: '#6f8a93', tag: 'SOMETHING IS COMING', font: 'mono', ink: '#c9d1d4', p: 'flicker', float: 0.006, speed: 9, sway: 0.01, jitter: 0.012, bounce: 0, pulse: 0, scale: 0.9 },
+  powerful: { top: '#1a0f0b', bottom: '#050404', glow: 'rgba(255,80,30,0.35)', band: '#ffffff', cup: '#ff4d12', tag: 'UNLEASH IT.', font: 'heavy', ink: '#ffffff', p: 'rings', float: 0.01, speed: 1, sway: 0, jitter: 0, bounce: 0, pulse: 0.08, scale: 1.15 },
+  playful: { top: '#ffd9ef', bottom: '#fff4c8', glow: 'rgba(255,255,255,0.6)', band: '#ffffff', cup: '#ff4fa3', tag: 'Play it loud!', font: 'round', ink: '#7a2a8c', p: 'confetti', float: 0, speed: 3.2, sway: 0.08, jitter: 0, bounce: 0.09, pulse: 0, scale: 0.95 },
+  luxury: { top: '#0d0c0b', bottom: '#1c1915', glow: 'rgba(201,164,107,0.22)', band: '#c9a46b', cup: '#16130f', tag: 'C R A F T E D   T O   L A S T', font: 'spaced', ink: '#c9a46b', p: 'sparkle', float: 0.008, speed: 0.4, sway: 0.01, jitter: 0, bounce: 0, pulse: 0, scale: 1 },
+  sad: { top: '#59636e', bottom: '#8a929b', glow: 'rgba(255,255,255,0.08)', band: '#b8bec5', cup: '#5f6b78', tag: 'Some songs stay.', font: 'light', ink: '#e6e9ec', p: 'rain', float: 0.004, speed: 0.4, sway: 0, jitter: 0, bounce: 0, pulse: 0, scale: 0.86 },
+  hopeful: { top: '#ffb98c', bottom: '#fff0c9', glow: 'rgba(255,255,230,0.8)', band: '#fffaf0', cup: '#ff8a4c', tag: 'Hear a new day.', font: 'italic', ink: '#7a3b14', p: 'motes', float: 0.02, speed: 0.8, sway: 0.02, jitter: 0, bounce: 0, pulse: 0, scale: 1.03 },
+};
+
+const hex = (h: string) => (h.startsWith('#') ? [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16)) : [0, 0, 0]);
+const mix = (a: number[], b: number[], k: number) => a.map((v, i) => v + (b[i] - v) * k);
+const rgb = (c: number[]) => `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
 
 export function Emotion() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [emotion, setEmotion] = useState<EmotionId>('powerful');
-  const emotionRef = useRef<EmotionId>('powerful');
-  const e = EMOTIONS[emotion];
+  const [emotion, setEmotion] = useState<EmotionId>('calm');
+  const emotionRef = useRef<EmotionId>('calm');
   const st = useRef({
-    t: 0,
-    clock: 0,
-    speed: 0.7,
-    amp: 0.26,
-    freq: 1.4,
-    scale: 1,
-    y: 0,
-    rot: 0.2,
-    angle: 0,
-    gloss: 0.6,
-    cols: EMOTIONS.powerful.colors.map(hex),
+    top: hex(LOOK.calm.top),
+    bottom: hex(LOOK.calm.bottom),
+    since: 0,
+    beat: 0,
+    parts: Array.from({ length: 60 }, () => ({ x: Math.random(), y: Math.random(), s: Math.random(), v: Math.random() })),
   });
 
-  useCanvasLoop(canvasRef, (ctx, w, h, dt) => {
+  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = st.current;
-    const E = EMOTIONS[emotionRef.current];
-    s.clock += dt;
-    s.speed = damp(s.speed, E.speed, 3, dt);
-    s.amp = damp(s.amp, E.amp, 3, dt);
-    s.freq = damp(s.freq, E.freq, 3, dt);
-    s.scale = damp(s.scale, E.scale, 3, dt);
-    s.y = damp(s.y, E.y, 2, dt);
-    s.rot = damp(s.rot, E.rot, 3, dt);
-    s.gloss = damp(s.gloss, E.gloss, 3, dt);
-    E.colors.forEach((c, i) => {
-      const t = hex(c);
-      s.cols[i] = s.cols[i].map((v, k) => damp(v, t[k], 3, dt));
-    });
-    s.t += dt * s.speed;
-    s.angle += dt * s.rot;
-
-    let R = Math.min(w, h) * 0.3 * s.scale;
-    if (E.pulse) R *= 1 + Math.pow(Math.max(0, Math.sin(s.clock * Math.PI * E.pulse)), 12) * 0.07;
-    let cx = w / 2;
-    let cy = h * 0.47 - s.y * R * 0.9;
-    if (E.jitter) {
-      cx += (Math.random() - 0.5) * E.jitter * R;
-      cy += (Math.random() - 0.5) * E.jitter * R;
-    }
-    if (E.bounce) cy -= Math.abs(Math.sin(s.clock * 3)) * E.bounce * R * 0.6;
-    cy += Math.sin(s.clock * 0.8) * R * 0.02;
-
-    // the outline: a circle disturbed by layered waves
-    const lobes = 2 + s.freq * 1.6;
-    const pts: [number, number][] = [];
-    for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2;
-      const n =
-        Math.sin(a * Math.round(lobes) + s.t * 1.7 + s.angle) * 0.5 +
-        Math.sin(a * Math.round(lobes * 1.7 + 1) - s.t * 1.3) * 0.3 +
-        Math.sin(a * 2 + s.t * 0.9) * 0.4;
-      const r = R * (1 + s.amp * 0.55 * n);
-      pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]);
-    }
-    const path = new Path2D();
-    pts.forEach(([x, y], i) => {
-      const [nx, ny] = pts[(i + 1) % N];
-      const mx = (x + nx) / 2;
-      const my = (y + ny) / 2;
-      if (i === 0) path.moveTo(mx, my);
-      else path.quadraticCurveTo(x, y, mx, my);
-    });
-    path.closePath();
-
-    ctx.clearRect(0, 0, w, h);
-    // soft light behind the form
-    const halo = ctx.createRadialGradient(cx, cy, R * 0.4, cx, cy, R * 1.9);
-    halo.addColorStop(0, rgba(s.cols[0], 0.22));
-    halo.addColorStop(1, rgba(s.cols[0], 0));
-    ctx.fillStyle = halo;
+    const L = LOOK[emotionRef.current];
+    s.since += dt;
+    // the grade crossfades so the change itself feels designed
+    s.top = mix(s.top, hex(L.top), 1 - Math.exp(-4 * dt));
+    s.bottom = mix(s.bottom, hex(L.bottom), 1 - Math.exp(-4 * dt));
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, rgb(s.top));
+    g.addColorStop(1, rgb(s.bottom));
+    ctx.fillStyle = g;
     ctx.fillRect(0, 0, w, h);
-    // ground shadow
-    ctx.fillStyle = 'rgba(20,18,16,0.10)';
-    ctx.beginPath();
-    ctx.ellipse(w / 2, h * 0.47 + R * 1.25, R * 0.8, R * 0.09, 0, 0, Math.PI * 2);
-    ctx.fill();
+    const glow = ctx.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, h * 0.65);
+    glow.addColorStop(0, L.glow);
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
 
-    ctx.save();
-    ctx.clip(path);
-    ctx.fillStyle = rgba(s.cols[1]);
-    ctx.fillRect(cx - R * 2, cy - R * 2, R * 4, R * 4);
-    // colour fields drift inside the form
-    const fields: [number[], number, number][] = [
-      [s.cols[0], s.angle, 0.85],
-      [s.cols[2], s.angle + 2.4, 0.7],
-      [s.cols[0], -s.angle * 0.7 + 4, 0.55],
-    ];
-    for (const [c, a, k] of fields) {
-      const fx = cx + Math.cos(a + s.t * 0.4) * R * 0.55;
-      const fy = cy + Math.sin(a * 1.2 + s.t * 0.3) * R * 0.5;
-      const g = ctx.createRadialGradient(fx, fy, 0, fx, fy, R * 1.1 * k + R * 0.3);
-      g.addColorStop(0, rgba(c, 0.95));
-      g.addColorStop(1, rgba(c, 0));
-      ctx.fillStyle = g;
-      ctx.fillRect(cx - R * 2, cy - R * 2, R * 4, R * 4);
+    // atmosphere
+    const cx = w / 2;
+    const cy = h * 0.45;
+    for (const p of s.parts) {
+      if (L.p === 'bokeh') {
+        p.y -= dt * 0.01 * (0.5 + p.v);
+        if (p.y < -0.1) p.y = 1.1;
+        if (p.s > 0.45) continue;
+        ctx.fillStyle = `rgba(255,255,255,${0.12 + p.s * 0.25})`;
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, 3 + p.s * 10, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (L.p === 'flicker') {
+        if (Math.random() < 0.08) {
+          ctx.fillStyle = 'rgba(200,220,225,0.35)';
+          ctx.fillRect(p.x * w, rand(0, h), rand(10, 80), 1);
+        }
+      } else if (L.p === 'confetti') {
+        p.y += dt * (0.08 + p.v * 0.12);
+        if (p.y > 1.05) p.y = -0.05;
+        ctx.save();
+        ctx.translate(p.x * w + Math.sin(time * 2 + p.s * 9) * 10, p.y * h);
+        ctx.rotate(time * 3 + p.s * 6);
+        ctx.fillStyle = ['#ff4fa3', '#ffd23f', '#40d8ff', '#7cff8a'][Math.floor(p.s * 4)];
+        ctx.fillRect(-4, -2, 8, 4);
+        ctx.restore();
+      } else if (L.p === 'sparkle') {
+        const a = Math.max(0, Math.sin(time * 0.8 + p.s * 20)) * 0.9;
+        ctx.fillStyle = `rgba(230,200,140,${a * 0.7})`;
+        ctx.fillRect(p.x * w, p.y * h, 1.5, 1.5);
+      } else if (L.p === 'rain') {
+        p.y += dt * (0.5 + p.v * 0.4);
+        if (p.y > 1.05) p.y = -0.05;
+        ctx.strokeStyle = 'rgba(230,235,240,0.25)';
+        ctx.beginPath();
+        ctx.moveTo(p.x * w, p.y * h);
+        ctx.lineTo(p.x * w - 3, p.y * h + 14);
+        ctx.stroke();
+      } else if (L.p === 'motes') {
+        p.y -= dt * 0.03 * (0.5 + p.v);
+        if (p.y < -0.05) p.y = 1.05;
+        ctx.fillStyle = `rgba(255,250,220,${0.3 + p.s * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(p.x * w + Math.sin(time + p.s * 9) * 8, p.y * h, 1.5 + p.s * 2.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
-    // rim and gloss
-    const rim = ctx.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 1.3);
-    rim.addColorStop(0, 'rgba(0,0,0,0)');
-    rim.addColorStop(1, 'rgba(0,0,0,0.22)');
-    ctx.fillStyle = rim;
-    ctx.fillRect(cx - R * 2, cy - R * 2, R * 4, R * 4);
-    const gl = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.4, 0, cx - R * 0.35, cy - R * 0.4, R * 0.55);
-    gl.addColorStop(0, `rgba(255,255,255,${Math.min(0.85, 0.25 + s.gloss * 0.4)})`);
-    gl.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = gl;
-    ctx.fillRect(cx - R * 2, cy - R * 2, R * 4, R * 4);
+    if (L.p === 'rings') {
+      const period = 1.1;
+      const ph = (time % period) / period;
+      for (let i = 0; i < 3; i++) {
+        const k = (ph + i / 3) % 1;
+        ctx.strokeStyle = `rgba(255,90,30,${(1 - k) * 0.45})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(cx, cy, h * (0.2 + k * 0.5), 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.lineWidth = 1;
+    }
+
+    // the product — same object, different behaviour
+    let y = cy + Math.sin(time * L.speed) * h * L.float;
+    let x = cx + Math.sin(time * L.speed * 0.7) * w * L.sway * 0.3;
+    if (L.jitter) {
+      x += rand(-1, 1) * h * L.jitter;
+      y += rand(-1, 1) * h * L.jitter;
+    }
+    if (L.bounce) y -= Math.abs(Math.sin(time * L.speed)) * h * L.bounce;
+    let sc = L.scale;
+    if (L.pulse) sc *= 1 + Math.pow(Math.max(0, Math.sin((time / 1.1) * Math.PI * 2)), 10) * L.pulse;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(Math.sin(time * L.speed * 0.8) * L.sway);
+    ctx.scale(sc, sc);
+    ctx.fillStyle = 'rgba(0,0,0,0.12)';
+    ctx.beginPath();
+    ctx.ellipse(0, h * 0.27 - (y - cy), h * 0.18, h * 0.02, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawHeadphones(ctx, 0, 0, h * 0.36, L.band, L.cup);
     ctx.restore();
+
+    // the line, set in the voice of the feeling
+    const k = Math.min(1, s.since / 0.6);
+    ctx.globalAlpha = k;
+    ctx.fillStyle = L.ink;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const ty = h * 0.84 + (1 - k) * 10;
+    if (L.font === 'mono') ctx.font = `500 ${h * 0.05}px "IBM Plex Mono", monospace`;
+    else if (L.font === 'heavy') ctx.font = `900 ${h * 0.09}px Inter, sans-serif`;
+    else if (L.font === 'round') ctx.font = `800 ${h * 0.075}px Inter, sans-serif`;
+    else if (L.font === 'spaced') ctx.font = serif(h * 0.045);
+    else if (L.font === 'light') ctx.font = serif(h * 0.07);
+    else ctx.font = serif(h * 0.075, true);
+    const jx = L.font === 'mono' ? rand(-1.5, 1.5) : 0;
+    ctx.fillText(L.tag, cx + jx, ty);
+    ctx.globalAlpha = 1;
   });
 
+  const ids = Object.keys(EMOTIONS) as EmotionId[];
   return (
-    <Panel
-      id="emotion"
-      num="08"
-      title="Emotion"
-      theme="paper"
-      question="What should people feel?"
-      headline={['The same shape.', 'Different feeling.']}
-      body={<p>Pick a feeling. The shape never changes. Only its speed, movement, colour and sound do. That is exactly what happens to a product in a film.</p>}
-      forYou={{
-        text: 'Before anyone reads a word, motion and sound tell your customer how to feel about your product: calm, premium, exciting or trustworthy. I design that feeling on purpose.',
-      }}
-      aside={
-        <RadioList
-          options={(Object.keys(EMOTIONS) as EmotionId[]).map((id) => ({ id, label: EMOTIONS[id].label }))}
-          value={emotion}
-          onChange={(id) => {
-            setEmotion(id);
-            emotionRef.current = id;
-            EMOTIONS[id].sound();
-          }}
-        />
-      }
-    >
-      <div className="em-stage" style={{ '--em-light': e.light } as CSSProperties}>
-        <canvas className="em-canvas" ref={canvasRef} />
-        <div className="em-card" key={emotion}>
-          <p className="em-feel">{e.label}</p>
-          <p className="em-line">{e.line}</p>
-          <div className="em-row">
-            <span>Use it for</span>
-            <ul>
-              {e.uses.map((u) => (
-                <li key={u}>{u}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="em-row">
-            <span>How it's made</span>
-            <p>{e.recipe}</p>
-          </div>
-        </div>
-      </div>
+    <Panel id="emotion" num="08" title="Emotion" theme="paper" headline={['Same product.', 'Different feeling.']} body={<p>Pick a feeling. The product stays the same.</p>}>
+      <Monitor
+        canvasRef={canvasRef}
+        caption={
+          <span className="mon-word" key={emotion}>
+            {EMOTIONS[emotion].uses.slice(0, 3).join(' · ')}
+          </span>
+        }
+        controls={
+          <Segment
+            boxed
+            options={ids.map((id) => ({ id, label: EMOTIONS[id].label }))}
+            value={emotion}
+            onChange={(id) => {
+              setEmotion(id);
+              emotionRef.current = id;
+              st.current.since = 0;
+              EMOTIONS[id].sound();
+            }}
+          />
+        }
+      />
     </Panel>
   );
 }

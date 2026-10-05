@@ -267,13 +267,8 @@ export function Rhythm() {
       num="05"
       title="Rhythm"
       theme="dark"
-      question="Does the edit feel right?"
       headline={['Cut to', 'the beat.']}
-      body={<p>A short KORA ad: five shots, cut on every beat of the music. Change the rhythm and watch the same footage change character.</p>}
-      forYou={{
-        text: 'Edits, transitions and kinetic type that land on the music feel intentional and premium. Off the beat, the same footage feels amateur.',
-        uses: ['Social ads', 'Launch films', 'Music videos'],
-      }}
+      body={<p>Five shots, cut to the music. Change the rhythm.</p>}
       actions={
         <div className="rh-actions">
           <PillButton

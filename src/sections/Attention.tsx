@@ -74,13 +74,8 @@ export function Attention() {
       num="02"
       title="Attention"
       theme="paper"
-      question="Where will people look?"
-      headline={['Motion', 'directs', 'attention.']}
-      body={<p>A quick test with your own eyes. Find the word KORA, three times. Every tile looks the same; only the motion changes.</p>}
-      forYou={{
-        text: "Your customers scan, they don't read. One small, well-placed movement takes them straight to the offer, the new feature or the button. Too much movement, and they get lost.",
-        uses: ['Ads', 'Websites', 'App UI', 'Social posts'],
-      }}
+      headline={['Where do', 'eyes go?']}
+      body={<p>Find KORA. Three quick rounds.</p>}
     >
       <div className="ag-wrap">
         <div className="ag-head">

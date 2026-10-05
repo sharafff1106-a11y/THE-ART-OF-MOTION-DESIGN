@@ -129,3 +129,20 @@ export function useLocalPointer(ref: RefObject<HTMLElement>) {
   }, [ref]);
   return p;
 }
+
+/**
+ * Sound for a chapter is armed by the visitor's first click there and
+ * disarmed as soon as the chapter leaves the screen. Loops stay silent otherwise.
+ */
+export function useArmedSound(ref: RefObject<Element>) {
+  const visible = useInView(ref, { threshold: 0.3 });
+  const armed = useRef(false);
+  useEffect(() => {
+    if (!visible) armed.current = false;
+  }, [visible]);
+  const arm = async () => {
+    await audio.enable();
+    armed.current = true;
+  };
+  return { armed, arm, visible };
+}

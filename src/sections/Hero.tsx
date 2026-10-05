@@ -11,10 +11,10 @@ import { scrollToId } from '../motion/scroll';
  */
 const LINES = [['Your', 'message'], ['deserves', 'to', 'be'], ['felt.']];
 const CAPTIONS = {
-  none: 'Words alone. You read them, and you move on.',
-  motion: 'Motion gives the same words timing, order and personality. Your eye follows them.',
-  sound: 'Sound alone sets a mood, but there is nothing to watch.',
-  both: 'Together, the same words become a moment people feel. That is what I design for brands.',
+  none: 'Words alone. Easy to ignore.',
+  motion: 'With motion. Now you watch.',
+  sound: 'Sound alone. A mood, nothing to see.',
+  both: 'Motion and sound. Now you feel it.',
 };
 
 export function Hero() {
@@ -24,7 +24,7 @@ export function Hero() {
   const idle = useRef<gsap.core.Tween | null>(null);
   const shown = useInView(ref, { threshold: 0.1, once: true });
   const soundOn = useSoundEnabled();
-  const [motion, setMotion] = useState(false);
+  const [motion, setMotion] = useState(true);
   const [sound, setSound] = useState(false);
   const [hint, setHint] = useState(false);
   const state = motion && sound ? 'both' : motion ? 'motion' : sound ? 'sound' : 'none';
@@ -85,6 +85,16 @@ export function Hero() {
 
   useLayoutEffect(() => () => reset(), []);
 
+  // the first impression plays by itself; the switches come after
+  const played = useRef(false);
+  useEffect(() => {
+    if (shown && !played.current) {
+      played.current = true;
+      run(true, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shown]);
+
   const toggleMotion = () => {
     const m = !motion;
     setMotion(m);
@@ -102,9 +112,7 @@ export function Hero() {
     <section ref={ref} id="understanding" data-theme="ivory" data-num="01" className={`panel panel--ivory hero hero--type ${shown ? 'is-in' : ''} is-${state}`}>
       <div className="hk-top">
         <p className="hero-eyebrow">Gaurav · Motion &amp; Sound Designer</p>
-        <p className="hk-intro">
-          A short, interactive presentation of what motion and sound can do for your brand. Start with this one sentence.
-        </p>
+        <p className="hk-intro">What motion and sound can do for your brand.</p>
       </div>
 
       <h1 className="hk-stage" ref={stageRef} aria-label="Your message deserves to be felt.">

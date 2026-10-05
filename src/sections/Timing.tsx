@@ -1,192 +1,123 @@
 import { useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { PillButton, Segment } from '../components/Controls';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { TIMING, TimingPreset } from '../motion/easing';
-import { useCanvasLoop } from '../motion/hooks';
-import { clamp, lerp } from '../motion/math';
-import { drawSphere } from '../motion/sprites';
+import { TIMING } from '../motion/easing';
+import { useArmedSound, useCanvasLoop } from '../motion/hooks';
+import { drawBackdrop, drawHeadphones, serif } from '../motion/kora';
+import { clamp, crossed, lerp } from '../motion/math';
 
 /**
  * 03 — TIMING
- * Two windows, one clock. Same start, same end, same duration.
- * Left: linear. Right: whichever personality you choose.
+ * The KORA product reveal, five ways. Same start, same end, same duration.
  */
-const WAIT = 0.5;
-const MOVE = 1.15;
-const HOLD = 0.95;
+const WAIT = 0.45;
+const MOVE = 1.0;
+const HOLD = 1.3;
 const CYCLE = WAIT + MOVE + HOLD;
-const GHOSTS = 9;
-
-const linear = TIMING[0];
-const CHOICES = TIMING.slice(1);
-/** plain-language explanations for clients */
-const EXPLAIN: Record<string, { what: string; seen: string }> = {
-  eased: { what: 'It speeds up gently, then slows down before it stops. Nothing in the real world starts or stops instantly.', seen: 'Premium UI, product shots, most logo animations.' },
-  anticipation: { what: 'It pulls back a little before the main move, like bending your knees before a jump. The small move prepares you for the big one.', seen: 'Logo reveals, buttons, character animation.' },
-  overshoot: { what: 'It moves past the target and comes back. It feels energetic and confident.', seen: 'App icons, notifications, playful brands.' },
-  settle: { what: 'It arrives, then wobbles to rest like a real object losing its energy.', seen: 'Product drops, cards landing, 3D packshots.' },
-};
-const CAPTIONS: Record<string, string> = {
-  linear: 'Mechanical. Robotic. Lifeless.',
-  eased: 'Natural. Calm. Considered.',
-  anticipation: 'Natural. Expressive. Alive.',
-  overshoot: 'Energetic. Confident. Playful.',
-  settle: 'Physical. Real. Believable.',
+const WORDS: Record<string, string> = {
+  linear: 'Robotic.',
+  eased: 'Smooth. Premium.',
+  anticipation: 'Expressive.',
+  overshoot: 'Energetic.',
+  settle: 'Physical. Real.',
 };
 
-function useBox(
-  ref: React.RefObject<HTMLCanvasElement>,
-  getPreset: () => TimingPreset,
-  clockRef: React.MutableRefObject<number>,
-  arc: boolean,
-  armRef: React.MutableRefObject<number>,
-) {
-  const last = useRef({ arrived: false });
-  useCanvasLoop(ref, (ctx, w, h) => {
-    const preset = getPreset();
-    const now = performance.now() / 1000 - clockRef.current;
-    const phase = ((now % CYCLE) + CYCLE) % CYCLE;
-    const at = (tt: number) => clamp((tt - WAIT) / MOVE);
-    const x0 = w * 0.16;
-    const x1 = w * 0.84;
-    const cy = h * 0.5;
-    const R = Math.min(w, h) * 0.075;
-    const pos = (u: number) => {
-      const p = preset.ease(u);
-      return { x: lerp(x0, x1, p), y: cy - (arc ? Math.sin(Math.PI * clamp(p)) * h * 0.2 : 0), p };
-    };
+export function Timing() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { armed, arm } = useArmedSound(wrapRef);
+  const [mode, setMode] = useState('linear');
+  const modeRef = useRef('linear');
+  const st = useRef({ t0: performance.now() / 1000, prev: 0, prevPos: 0 });
 
-    ctx.clearRect(0, 0, w, h);
-    // baseline
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x0, cy + R * 1.6);
-    ctx.lineTo(x1, cy + R * 1.6);
-    ctx.stroke();
+  useCanvasLoop(canvasRef, (ctx, w, h) => {
+    const s = st.current;
+    const preset = TIMING.find((p) => p.id === modeRef.current)!;
+    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const u = clamp((t - WAIT) / MOVE);
+    const p = preset.ease(u);
 
-    // ghosts: equal time, unequal space
-    for (let k = GHOSTS; k >= 1; k--) {
-      const g = pos(at(phase - k * 0.045));
-      ctx.globalAlpha = (1 - k / (GHOSTS + 1)) * 0.28;
-      drawSphere(ctx, 'grey', g.x, g.y, R);
+    drawBackdrop(ctx, w, h, '#1b1917', '#0c0b0a', 'rgba(255,110,50,0.16)');
+    // floor line
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(0, h * 0.78, w, 1);
+
+    const size = h * 0.42;
+    const x0 = w * 0.18;
+    const x1 = w * 0.5;
+    const y = h * 0.5;
+    // ghosts: where the product was a few frames ago — spacing shows speed
+    for (let k = 5; k >= 1; k--) {
+      const gu = clamp((t - k * 0.05 - WAIT) / MOVE);
+      const gx = lerp(x0, x1, preset.ease(gu));
+      ctx.globalAlpha = 0.07 * (6 - k);
+      drawHeadphones(ctx, gx, y, size, '#efe9df', '#ff5a1f');
     }
-    const c = pos(at(phase));
+    ctx.globalAlpha = Math.min(1, t / 0.25);
+    drawHeadphones(ctx, lerp(x0, x1, p), y, size, '#efe9df', '#ff5a1f');
+    // the name follows the product with the same timing
+    const wu = clamp((t - WAIT - 0.18) / MOVE);
+    const wp = preset.ease(wu);
+    ctx.globalAlpha = clamp(wu * 3);
+    ctx.fillStyle = '#efe9df';
+    ctx.textAlign = 'center';
+    ctx.font = serif(h * 0.11);
+    ctx.fillText('KORA', w * 0.5, h * 0.2 + (1 - wp) * h * 0.06);
     ctx.globalAlpha = 1;
-    drawSphere(ctx, 'white', c.x, c.y, R);
-    if (arc) {
-      const warm = clamp(c.p);
-      ctx.globalAlpha = warm;
-      drawSphere(ctx, 'glow', c.x, c.y, R * 3);
-      drawSphere(ctx, 'orange', c.x, c.y, R);
-      ctx.globalAlpha = 1;
-    }
 
-    // tiny curve readout
-    const gw = Math.min(90, w * 0.22);
-    const gh = gw * 0.62;
+    // speed graph, bottom right
+    const gw = w * 0.16;
+    const gh = h * 0.16;
     const gx = w - gw - 18;
     const gy = h - gh - 18;
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.strokeRect(gx, gy, gw, gh);
-    ctx.strokeStyle = arc ? '#ff6a2c' : 'rgba(255,255,255,0.7)';
+    ctx.strokeStyle = '#ff6a2c';
+    ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i <= 40; i++) {
-      const u = i / 40;
-      const yy = gy + gh - (preset.ease(u) * 0.75 + 0.12) * gh;
-      if (i) ctx.lineTo(gx + u * gw, yy);
-      else ctx.moveTo(gx + u * gw, yy);
+      const q = i / 40;
+      const yy = gy + gh - (preset.ease(q) * 0.7 + 0.15) * gh;
+      if (i) ctx.lineTo(gx + q * gw, yy);
+      else ctx.moveTo(gx + q * gw, yy);
     }
     ctx.stroke();
-    const u = at(phase);
+    ctx.lineWidth = 1;
     ctx.fillStyle = '#fff';
     ctx.beginPath();
-    ctx.arc(gx + u * gw, gy + gh - (preset.ease(u) * 0.75 + 0.12) * gh, 2.5, 0, Math.PI * 2);
+    ctx.arc(gx + u * gw, gy + gh - (p * 0.7 + 0.15) * gh, 3, 0, Math.PI * 2);
     ctx.fill();
 
-    const arrived = phase > WAIT + MOVE * 0.98;
-    // sound only for a run the visitor started
-    if (arrived && !last.current.arrived && performance.now() / 1000 < armRef.current) audio.click(arc ? 2600 : 900, arc ? 0.2 : 0.12, { pan: 0.6 });
-    last.current.arrived = arrived;
+    if (armed.current) {
+      if (crossed(s.prev, t, WAIT)) audio.whoosh(MOVE * 0.8, 0.1);
+      if (u > 0 && (s.prevPos - 1) * (p - 1) <= 0 && s.prevPos !== p) audio.click(2400, 0.12);
+    }
+    s.prev = t;
+    s.prevPos = p;
   });
-}
-
-export function Timing() {
-  const [choice, setChoice] = useState('anticipation');
-  const choiceRef = useRef(CHOICES[1]);
-  const clock = useRef(0);
-  const leftRef = useRef<HTMLCanvasElement>(null);
-  const rightRef = useRef<HTMLCanvasElement>(null);
-  const arm = useRef(0);
-  useBox(leftRef, () => linear, clock, false, arm);
-  useBox(rightRef, () => choiceRef.current, clock, true, arm);
-  const preset = CHOICES.find((c) => c.id === choice)!;
 
   return (
-    <Panel
-      id="timing"
-      num="03"
-      title="Timing"
-      theme="dark"
-      question="How should it feel?"
-      headline={['Same', 'movement.', 'Different', 'feeling.']}
-      body={
-        <p>
-          Watch both balls. They start together and arrive together. The only difference is how they use that time, and it completely changes how they feel.
-        </p>
-      }
-      forYou={{
-        text: 'Timing is where personality comes from. The same logo or product shot can feel cheap, calm, premium or energetic depending on how it accelerates and stops.',
-        uses: ['Logo reveals', 'UI transitions', 'Product shots'],
-      }}
-      actions={
-        <PillButton
-          onClick={() => {
-            clock.current = performance.now() / 1000;
-            arm.current = clock.current + CYCLE;
-          }}
-        >
-          Play comparison
-        </PillButton>
-      }
-    >
-      <div className="tm-boxes">
-        <figure className="tm-box">
-          <figcaption className="tm-box-label">Linear</figcaption>
-          <canvas ref={leftRef} />
-          <p className="tm-box-caption">{CAPTIONS.linear}</p>
-        </figure>
-        <figure className="tm-box tm-box--hot">
-          <figcaption className="tm-box-label">With {preset.label.toLowerCase()}</figcaption>
-          <canvas ref={rightRef} />
-          <p className="tm-box-caption">{CAPTIONS[choice]}</p>
-        </figure>
-        <p className="tm-legend">
-          <i /> Each faded ball is one frame. Close together means slow, far apart means fast. The small graph shows speed over time.
-        </p>
-        <div className="tm-choose">
+    <Panel id="timing" num="03" title="Timing" theme="dark" headline={['Same move.', 'Different feel.']} body={<p>Switch the timing. Watch the product change character.</p>}>
+      <Monitor
+        canvasRef={canvasRef}
+        wrapRef={wrapRef}
+        caption={<span className="mon-word" key={mode}>{WORDS[mode]}</span>}
+        controls={
           <Segment
             boxed
-            options={CHOICES.map((c) => ({ id: c.id, label: c.label }))}
-            value={choice}
-            onChange={(id) => {
-              setChoice(id);
-              choiceRef.current = CHOICES.find((c) => c.id === id)!;
-              clock.current = performance.now() / 1000;
-              arm.current = clock.current + CYCLE;
+            options={TIMING.map((t) => ({ id: t.id, label: t.label }))}
+            value={mode}
+            onChange={(m) => {
+              void arm();
+              setMode(m);
+              modeRef.current = m;
+              st.current.t0 = performance.now() / 1000;
             }}
           />
-          <div className="tm-explain" key={choice}>
-            <p>
-              <b>What it is.</b> {EXPLAIN[choice].what}
-            </p>
-            <p>
-              <b>Where you've seen it.</b> {EXPLAIN[choice].seen}
-            </p>
-          </div>
-        </div>
-      </div>
+        }
+      />
     </Panel>
   );
 }

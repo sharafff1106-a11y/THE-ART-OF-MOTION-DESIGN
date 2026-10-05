@@ -9,3 +9,5 @@ export const smoothstep = (a: number, b: number, v: number) => {
 export const damp = (a: number, b: number, lambda: number, dt: number) => lerp(a, b, 1 - Math.exp(-lambda * dt));
 export const rand = (a = 0, b = 1) => a + Math.random() * (b - a);
 export const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+/** Did a looping clock pass `at` between two frames? Handles the wrap-around. */
+export const crossed = (prev: number, now: number, at: number) => (prev <= now ? prev < at && now >= at : prev < at || now >= at);

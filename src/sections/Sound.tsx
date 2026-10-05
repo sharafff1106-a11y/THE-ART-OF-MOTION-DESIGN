@@ -1,205 +1,137 @@
 import { useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { PillButton } from '../components/Controls';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { drawCube } from '../motion/cube';
-import { useCanvasLoop, useSoundEnabled } from '../motion/hooks';
-import { lerp, rand } from '../motion/math';
+import { useArmedSound, useCanvasLoop } from '../motion/hooks';
+import { drawBackdrop, drawHeadphones, drawSub, serif } from '../motion/kora';
+import { clamp, crossed, easeOut, lerp } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
 /**
  * 07 — SOUND
- * Press Drop: the same cube falls in both windows at the same moment.
- * Only the right one is sound-designed, and each layer is named as it plays.
+ * The KORA case closes: headphones drop in, the lid snaps, the light comes on.
+ * The pictures never change. Switch the sound on and it becomes real.
  */
-const HOLD = 0.25;
-const FALL = 0.6;
-const DONE = 2.6;
-const LAYERS = [
-  { id: 'air', label: 'Air', at: HOLD },
-  { id: 'impact', label: 'Impact', at: HOLD + FALL },
-  { id: 'body', label: 'Low body', at: HOLD + FALL + 0.02 },
-  { id: 'debris', label: 'Debris', at: HOLD + FALL + 0.08 },
-  { id: 'tail', label: 'Room tail', at: HOLD + FALL + 0.3 },
+const CYCLE = 3.6;
+const LAND = 0.85;
+const SNAP = 1.6;
+const LED = 2.1;
+const EVENTS = [
+  { at: LAND, label: '[ soft thud ]' },
+  { at: SNAP, label: '[ metal snap ]' },
+  { at: LED, label: '[ bright chime ]' },
 ];
 
-/** height above the floor, 0..1 */
-function heightAt(t: number) {
-  if (t < HOLD) return 1;
-  const f = t - HOLD;
-  if (f < FALL) return 1 - Math.pow(f / FALL, 2);
-  const b = f - FALL;
-  return b < 0.3 ? Math.sin((b / 0.3) * Math.PI) * 0.06 : 0;
-}
-
-interface Shard {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  r: number;
-  life: number;
-}
-
-function useDropBox(ref: React.RefObject<HTMLCanvasElement>, t0: React.MutableRefObject<number>, designed: boolean) {
-  const st = useRef({ shards: [] as Shard[], flash: 0, shake: 0, impacted: false, lastT0: -2, idleDrawn: false, bg: null as HTMLCanvasElement | null, bw: 0, bh: 0 });
-  useCanvasLoop(ref, (ctx, w, h, dt) => {
-    const s = st.current;
-    const t = t0.current < 0 ? -1 : performance.now() / 1000 - t0.current;
-    const active = t >= 0 && t < DONE;
-    // nothing is moving: the resting frame is already on screen, so do no work
-    if (!active && s.idleDrawn && s.bw === w && s.bh === h) return;
-    if (t0.current !== s.lastT0) {
-      s.lastT0 = t0.current;
-      s.impacted = false;
-    }
-    const floor = h * 0.74;
-    const size = Math.min(w, h) * 0.22;
-    const cx = w * 0.5;
-
-    if (!s.bg || s.bw !== w || s.bh !== h) {
-      const c = document.createElement('canvas');
-      c.width = Math.max(1, w);
-      c.height = Math.max(1, h);
-      const g = c.getContext('2d')!;
-      const fg = g.createLinearGradient(0, floor, 0, h);
-      fg.addColorStop(0, 'rgba(255,255,255,0.10)');
-      fg.addColorStop(1, 'rgba(255,255,255,0)');
-      g.fillStyle = fg;
-      g.fillRect(0, floor, w, h - floor);
-      s.bg = c;
-      s.bw = w;
-      s.bh = h;
-    }
-    if (designed && active && t >= HOLD + FALL && !s.impacted) {
-      s.impacted = true;
-      s.flash = 1;
-      s.shake = 1;
-      for (let i = 0; i < 22; i++) {
-        s.shards.push({ x: cx + rand(-size * 0.5, size * 0.5), y: floor - 4, vx: rand(-240, 240), vy: rand(-380, -80), r: rand(1.5, 4), life: 1 });
-      }
-    }
-
-    // before the first drop the cube waits at the top
-    const H = t < 0 ? 1 : t >= DONE ? 0 : heightAt(t);
-    const y = floor - size * 0.62 - H * h * 0.48;
-    const falling = active && t > HOLD && t < HOLD + FALL;
-    const sy = falling ? 1.05 : active && t > HOLD + FALL && t < HOLD + FALL + 0.08 ? 0.9 : 1;
-
-    s.flash *= Math.exp(-dt * 6);
-    s.shake *= Math.exp(-dt * 9);
-    ctx.clearRect(0, 0, w, h);
-    ctx.save();
-    if (s.shake > 0.02) ctx.translate(rand(-1, 1) * s.shake * 6, rand(-1, 1) * s.shake * 4);
-    if (s.flash > 0.02) {
-      ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = s.flash * 0.8;
-      drawSphere(ctx, 'glow', cx, floor, size * 2.6);
-      ctx.globalCompositeOperation = 'source-over';
-    }
-    ctx.globalAlpha = 1;
-    ctx.drawImage(s.bg, 0, 0, w, h);
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath();
-    ctx.ellipse(cx, floor + 2, size * lerp(0.75, 0.3, H), size * 0.09, 0, 0, Math.PI * 2);
-    ctx.fill();
-    drawCube(ctx, cx, y, size, 0.5, 0.75, 0.05, [96, 96, 100], falling ? 0.95 : 1, sy);
-    for (let i = s.shards.length - 1; i >= 0; i--) {
-      const p = s.shards[i];
-      p.vy += 900 * dt;
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.y > floor) {
-        p.y = floor;
-        p.vy *= -0.3;
-        p.vx *= 0.7;
-      }
-      p.life -= dt * 0.75;
-      if (p.life <= 0) {
-        s.shards.splice(i, 1);
-        continue;
-      }
-      ctx.globalAlpha = p.life;
-      ctx.fillStyle = i % 3 ? '#9a9792' : '#ff8a4a';
-      ctx.fillRect(p.x, p.y, p.r, p.r);
-    }
-    ctx.restore();
-    ctx.globalAlpha = 1;
-    s.idleDrawn = !active && s.shards.length === 0 && s.flash < 0.02 && s.shake < 0.02;
-  });
-}
-
 export function Sound() {
-  const on = useSoundEnabled();
-  const t0 = useRef(-1);
-  const leftRef = useRef<HTMLCanvasElement>(null);
-  const rightRef = useRef<HTMLCanvasElement>(null);
-  const [lit, setLit] = useState<string[]>([]);
-  const timers = useRef<number[]>([]);
-  useDropBox(leftRef, t0, false);
-  useDropBox(rightRef, t0, true);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { armed, arm } = useArmedSound(wrapRef);
+  const [on, setOn] = useState<'off' | 'on'>('off');
+  const onRef = useRef(false);
+  const st = useRef({ t0: performance.now() / 1000, prev: 0 });
 
-  const drop = async () => {
-    await audio.enable();
-    timers.current.forEach((id) => window.clearTimeout(id));
-    setLit([]);
-    const start = performance.now() / 1000 + 0.05;
-    t0.current = start;
-    if (audio.live) {
-      const at = audio.at(start);
-      audio.whoosh(FALL, 0.16, { when: at + HOLD, pan: 0.5 });
-      audio.impact(0.8, 0.95, { when: at + HOLD + FALL, pan: 0.5 });
-      audio.impact(0.55, 0.18, { when: at + HOLD + FALL + 0.3, pan: 0.5 });
+  useCanvasLoop(canvasRef, (ctx, w, h) => {
+    const s = st.current;
+    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const live = onRef.current && armed.current;
+    if (live) {
+      if (crossed(s.prev, t, 0.35)) audio.whoosh(0.45, 0.08);
+      if (crossed(s.prev, t, LAND)) audio.impact(0.45, 0.6);
+      if (crossed(s.prev, t, SNAP)) {
+        audio.burst(3200, 6, 0.03, 0.4);
+        audio.impact(0.25, 0.45);
+      }
+      if (crossed(s.prev, t, LED)) [880, 1318.5].forEach((f, i) => audio.tone(f, 1.4, 0.04, { when: audio.ctx!.currentTime + i * 0.07, send: 0.5 }));
     }
-    timers.current = LAYERS.map((l) => window.setTimeout(() => setLit((x) => [...x, l.id]), (0.05 + l.at) * 1000));
-  };
+    s.prev = t;
+
+    drawBackdrop(ctx, w, h, '#1a1918', '#0b0b0a', 'rgba(255,255,255,0.05)');
+    const floor = h * 0.74;
+    ctx.fillStyle = 'rgba(255,255,255,0.07)';
+    ctx.fillRect(0, floor, w, 1);
+    const fade = t > CYCLE - 0.35 ? 1 - (t - (CYCLE - 0.35)) / 0.35 : Math.min(1, t / 0.2);
+    ctx.globalAlpha = fade;
+
+    const cw = h * 0.62;
+    const ch = h * 0.24;
+    const cx = w / 2;
+    const baseY = floor - ch;
+    // headphones drop into the case
+    const drop = clamp((t - 0.3) / (LAND - 0.3));
+    const hy = lerp(h * 0.05, baseY + ch * 0.32, drop * drop);
+    const settle = t > LAND ? Math.exp(-(t - LAND) * 10) * Math.sin((t - LAND) * 40) * h * 0.006 : 0;
+    drawHeadphones(ctx, cx, hy + settle, h * 0.27, '#d9d4cb', '#ff5a1f');
+    // case base (front plate)
+    ctx.fillStyle = '#2a2826';
+    ctx.beginPath();
+    ctx.roundRect(cx - cw / 2, baseY, cw, ch, ch * 0.3);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(cx - cw / 2 + 6, baseY + 4, cw - 12, 2);
+    // the lid, hinged at the back
+    const close = easeOut(clamp((t - (SNAP - 0.4)) / 0.4));
+    const ang = lerp(-1.95, 0, close * close);
+    ctx.save();
+    ctx.translate(cx - cw / 2, baseY);
+    ctx.rotate(ang);
+    ctx.fillStyle = '#34312e';
+    ctx.beginPath();
+    ctx.roundRect(0, -ch * 0.38, cw, ch * 0.38, ch * 0.16);
+    ctx.fill();
+    ctx.restore();
+    // the light
+    const led = t > LED ? 1 : 0;
+    if (led) {
+      ctx.globalAlpha = fade * 0.8;
+      drawSphere(ctx, 'glow', cx + cw * 0.36, baseY + ch * 0.5, h * 0.09);
+      ctx.globalAlpha = fade;
+    }
+    ctx.fillStyle = led ? '#ffb48a' : '#4a4643';
+    ctx.beginPath();
+    ctx.arc(cx + cw * 0.36, baseY + ch * 0.5, h * 0.012, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(239,233,223,0.55)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = serif(ch * 0.4);
+    ctx.fillText('KORA', cx - cw * 0.1, baseY + ch * 0.55);
+    ctx.globalAlpha = 1;
+
+    // what you would hear, written on screen
+    if (onRef.current) {
+      for (const e of EVENTS) {
+        const age = t - e.at;
+        if (age >= 0 && age < 0.9) drawSub(ctx, w, h, e.label, age < 0.7 ? 1 : 1 - (age - 0.7) / 0.2);
+      }
+    }
+  });
 
   return (
-    <Panel
-      id="sound"
-      num="07"
-      title="Sound"
-      theme="dark"
-      question="Does it feel real?"
-      className="panel--small-h"
-      headline={['The same visual.', 'With and without sound.', 'Feel the difference.']}
-      body={<p>Press Drop. Both cubes fall at exactly the same moment, with exactly the same animation. Only the right one has sound design.</p>}
-      forYou={{
-        text: 'Sound design gives weight, material and impact to what people see. A product shot with designed sound feels expensive; without it, it feels like a render.',
-        uses: ['Product films', 'App sounds', 'Sonic logos'],
-      }}
-      actions={
-        <>
-          <PillButton icon="play" onClick={drop}>
-            Drop
-          </PillButton>
-          {!on && <span className="snd-warn">Sound turns on when you press Drop.</span>}
-        </>
-      }
-    >
-      <div className="snd-boxes">
-        <figure className="snd-box">
-          <canvas ref={leftRef} />
-          <figcaption>
-            <b>Without sound</b>
-            Looks flat.
-          </figcaption>
-        </figure>
-        <figure className="snd-box snd-box--hot">
-          <canvas ref={rightRef} />
-          <div className="snd-layers">
-            {LAYERS.map((l) => (
-              <span key={l.id} className={lit.includes(l.id) ? 'is-on' : ''}>
-                {l.label}
-              </span>
-            ))}
-          </div>
-          <figcaption>
-            <b>With sound</b>
-            Feels real.
-          </figcaption>
-        </figure>
-      </div>
+    <Panel id="sound" num="07" title="Sound" theme="dark" headline={['Now', 'listen.']} body={<p>Same pictures. Turn the sound on.</p>}>
+      <Monitor
+        canvasRef={canvasRef}
+        wrapRef={wrapRef}
+        caption={<span className="mon-word" key={on}>{on === 'on' ? 'Feels real.' : 'Looks fine.'}</span>}
+        controls={
+          <Segment
+            boxed
+            options={[
+              { id: 'off', label: 'Sound off' },
+              { id: 'on', label: 'Sound on' },
+            ]}
+            value={on}
+            onChange={(v) => {
+              setOn(v);
+              onRef.current = v === 'on';
+              if (v === 'on') {
+                void arm();
+                st.current.t0 = performance.now() / 1000;
+              }
+            }}
+          />
+        }
+      />
     </Panel>
   );
 }

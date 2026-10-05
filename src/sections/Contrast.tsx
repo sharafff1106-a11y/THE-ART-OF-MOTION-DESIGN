@@ -172,13 +172,8 @@ export function Contrast() {
       num="06"
       title="Contrast"
       theme="blue"
-      question="What matters most?"
-      headline={['Without contrast,', 'there is no focus.']}
-      body={<p>The last frame of the KORA ad, two ways. Drag from chaos to clarity: the product, the name and the offer only land when everything else steps back.</p>}
-      forYou={{
-        text: 'When every element animates, shouts and flashes, viewers remember nothing. Space, restraint and one clear movement make your message the moment.',
-        uses: ['End cards', 'Title sequences', 'Banners', 'Pitch decks'],
-      }}
+      headline={['Less noise.', 'More impact.']}
+      body={<p>Drag from chaos to clean.</p>}
       actions={
         <>
           <div className="ct-slider">

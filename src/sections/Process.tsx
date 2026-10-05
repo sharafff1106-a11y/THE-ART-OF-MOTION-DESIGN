@@ -1,230 +1,194 @@
 import { useEffect, useRef, useState } from 'react';
-import { audio } from '../audio/engine';
-import { PillButton } from '../components/Controls';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
-import { drawCube } from '../motion/cube';
 import { useCanvasLoop, useInView } from '../motion/hooks';
-import { clamp, lerp } from '../motion/math';
-import { drawSphere } from '../motion/sprites';
+import { drawHeadphones, drawSub, serif } from '../motion/kora';
 
 /**
  * 11 — PROCESS
- * Not "make the object move". Idea → behaviour → perception.
- * Drag along the line and watch the same piece mature.
+ * One KORA frame, six stages. The client sees exactly what they will get
+ * at each step, and where they approve.
  */
 const STEPS = [
-  {
-    id: 'Brief',
-    me: 'I listen and ask questions until we can say the goal in one sentence.',
-    you: 'Tell me your goal, your audience and how it should feel.',
-    get: 'A short creative brief we both agree on.',
-  },
-  {
-    id: 'Concept',
-    me: 'Two or three creative directions, with moodboards and references.',
-    you: 'Choose a direction and share your thoughts.',
-    get: 'Direction boards to choose from.',
-  },
-  {
-    id: 'Styleframes',
-    me: 'Key still frames that show exactly how the film will look.',
-    you: 'Approve the look before any animation starts.',
-    get: 'A set of styleframes.',
-  },
-  {
-    id: 'Animation',
-    me: 'Timing, weight and rhythm: everything you just played with.',
-    you: 'Review previews and give feedback.',
-    get: 'Animation previews, then the final cut.',
-  },
-  {
-    id: 'Sound',
-    me: 'Sound effects, music and mix, designed together with the motion.',
-    you: 'Listen and give final notes.',
-    get: 'The film with full sound design.',
-  },
-  {
-    id: 'Delivery',
-    me: 'Exports for every platform, checked and named properly.',
-    you: 'Launch it.',
-    get: '16:9, 9:16 and 1:1 versions, cut-downs and sound files.',
-  },
+  { id: 'brief', label: 'Brief', line: 'We agree on the goal and the feeling.' },
+  { id: 'sketch', label: 'Sketch', line: 'Rough ideas, fast. Nothing is precious yet.' },
+  { id: 'style', label: 'Styleframe', line: 'The final look, as a still. You approve it.' },
+  { id: 'anim', label: 'Animation', line: 'Now it moves: timing, weight, rhythm.' },
+  { id: 'sound', label: 'Sound', line: 'Sound designed together with the motion.' },
+  { id: 'deliver', label: 'Delivery', line: 'Every format you need, ready to post.' },
 ];
+
+function finalFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, time: number, moving: boolean) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(x, y, w, h);
+  ctx.clip();
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, '#1d1a17');
+  g.addColorStop(1, '#0b0a09');
+  ctx.fillStyle = g;
+  ctx.fillRect(x, y, w, h);
+  const cx = x + w / 2;
+  const cy = y + h * 0.48;
+  if (moving) {
+    for (let i = 0; i < 3; i++) {
+      const k = ((time * 0.5 + i / 3) % 1);
+      ctx.strokeStyle = `rgba(255,90,31,${(1 - k) * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(w, h) * (0.18 + k * 0.4), 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+  const fy = moving ? Math.sin(time * 1.6) * h * 0.02 : 0;
+  drawHeadphones(ctx, cx, cy + fy, Math.min(w, h) * 0.34);
+  ctx.fillStyle = '#efe9df';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = serif(Math.min(w, h) * 0.12);
+  ctx.fillText('KORA', cx, y + h * 0.17);
+  ctx.restore();
+}
 
 export function Process() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const trackRef = useRef<HTMLDivElement>(null);
   const visible = useInView(wrapRef, { threshold: 0.4 });
   const [step, setStep] = useState(0);
   const stepRef = useRef(0);
-  const auto = useRef<number | null>(null);
-  const reveal = useRef(new Float32Array(STEPS.length));
+  const auto = useRef(true);
+  stepRef.current = step;
 
-  const go = (i: number, sound = true) => {
-    const n = clamp(Math.round(i), 0, STEPS.length - 1);
-    if (sound && n !== stepRef.current) audio.wood(1000 + n * 220, 0.14);
-    stepRef.current = n;
-    setStep(n);
-  };
-  const play = () => {
-    if (auto.current) window.clearInterval(auto.current);
-    go(0, false);
-    let i = 0;
-    auto.current = window.setInterval(() => {
-      i++;
-      if (i >= STEPS.length) {
-        window.clearInterval(auto.current!);
-        auto.current = null;
-        return;
-      }
-      go(i, false);
-    }, 1500);
-  };
+  // walks itself through the steps until the visitor takes over
   useEffect(() => {
-    if (visible && stepRef.current === 0) play();
-    return () => {
-      if (auto.current) window.clearInterval(auto.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!visible) return;
+    const id = window.setInterval(() => {
+      if (auto.current) setStep((s) => (s + 1) % STEPS.length);
+    }, 2400);
+    return () => window.clearInterval(id);
   }, [visible]);
 
-  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
-    ctx.clearRect(0, 0, w, h);
-    const n = STEPS.length;
-    const gap = 10;
-    const tw = (w - gap * (n - 1)) / n;
-    const th = h;
-    for (let i = 0; i < n; i++) {
-      const target = i <= stepRef.current ? 1 : 0;
-      reveal.current[i] = lerp(reveal.current[i], target, 1 - Math.exp(-6 * dt));
-      const r = reveal.current[i];
-      const x = i * (tw + gap);
-      const cx = x + tw / 2;
-      const cy = th / 2;
-      const s = Math.min(tw, th) * 0.3;
-      // tile
-      ctx.fillStyle = i === n - 1 ? `rgba(255,120,70,${0.08 + r * 0.14})` : `rgba(20,20,20,${0.03 + r * 0.03})`;
-      ctx.fillRect(x, 0, tw, th);
-      if (i === stepRef.current) {
-        ctx.strokeStyle = 'rgba(20,20,20,0.5)';
-        ctx.strokeRect(x + 0.5, 0.5, tw - 1, th - 1);
-      }
-      ctx.globalAlpha = 0.2 + r * 0.8;
-      const t = time * r;
-      ctx.strokeStyle = '#141414';
-      ctx.lineWidth = 1;
-      if (i === 0) {
+  useCanvasLoop(canvasRef, (ctx, w, h, _dt, time) => {
+    const sId = STEPS[stepRef.current].id;
+    if (sId === 'brief' || sId === 'sketch') {
+      ctx.fillStyle = '#f3eee5';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = 'rgba(60,50,40,0.08)';
+      for (let y = 24; y < h; y += 24) {
         ctx.beginPath();
-        ctx.arc(cx, cy, s, 0, Math.PI * 2);
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
         ctx.stroke();
-        for (let k = 0; k < 4; k++) {
-          const a = (k / 4) * Math.PI + t * 0.5;
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, Math.abs(Math.cos(a)) * s, s, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        for (const ly of [-0.5, 0, 0.5]) {
-          ctx.beginPath();
-          ctx.ellipse(cx, cy + ly * s, Math.sqrt(1 - ly * ly) * s, s * 0.12, 0, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-      } else if (i === 1) {
-        const wob = Math.sin(t * 2) * 0.08;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.scale(1 + wob, 1 - wob);
-        drawSphere(ctx, 'grey', 0, 0, s);
-        ctx.restore();
-      } else if (i === 2) {
-        ctx.lineWidth = 2;
-        for (let k = 0; k < 7; k++) {
-          ctx.strokeStyle = `rgba(20,20,20,${0.2 + k * 0.1})`;
-          ctx.beginPath();
-          for (let u = 0; u <= 30; u++) {
-            const px = cx - s + (u / 30) * s * 2;
-            const py = cy + Math.sin(u * 0.32 + t * 1.5 + k * 0.25) * s * 0.4 + (k - 3) * 3;
-            if (u) ctx.lineTo(px, py);
-            else ctx.moveTo(px, py);
-          }
-          ctx.stroke();
-        }
-      } else if (i === 3) {
-        drawCube(ctx, cx, cy, s * 1.2, 0.5 + t * 0.4, t * 0.9, 0.2, [120, 120, 122]);
-      } else if (i === 4) {
-        ctx.fillStyle = '#141414';
-        for (let k = -14; k <= 14; k++) {
-          const a = Math.abs(Math.sin(k * 0.9 + t * 6)) * Math.exp(-Math.abs(k) / 8);
-          const hh = 2 + a * s * 1.3;
-          ctx.fillRect(cx + k * (s / 9), cy - hh / 2, 1.5, hh);
-        }
-      } else {
-        ctx.globalAlpha = r;
-        drawSphere(ctx, 'glow', cx, cy, s * 2.2);
-        drawSphere(ctx, 'orange', cx, cy + Math.sin(t * 1.5) * 4, s);
       }
-      ctx.globalAlpha = 1;
+    }
+    if (sId === 'brief') {
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate(-0.03);
+      ctx.fillStyle = '#ffe58a';
+      ctx.shadowColor = 'rgba(0,0,0,0.15)';
+      ctx.shadowBlur = 20;
+      ctx.fillRect(-h * 0.42, -h * 0.3, h * 0.84, h * 0.6);
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#3a2f1c';
+      ctx.textAlign = 'left';
+      ctx.font = serif(h * 0.07, true);
+      ['Launch KORA.', 'Feel: calm, premium.', 'For: city commuters.'].forEach((l, i) => ctx.fillText(l, -h * 0.34, -h * 0.13 + i * h * 0.12));
+      ctx.restore();
+    } else if (sId === 'sketch') {
+      // pencil: the same composition drawn roughly, a few wobbly passes
+      ctx.strokeStyle = 'rgba(40,36,32,0.55)';
+      ctx.lineWidth = 1.4;
+      const cx = w / 2;
+      const cy = h * 0.48;
+      const s = h * 0.34;
+      for (let pass = 0; pass < 3; pass++) {
+        const j = (k: number) => Math.sin(k * 12.9898 + pass * 78.233) * 3;
+        ctx.beginPath();
+        ctx.arc(cx + j(1), cy + j(2), s * 0.5 + j(3), Math.PI, 0);
+        ctx.stroke();
+        for (const side of [-1, 1]) {
+          ctx.strokeRect(cx + side * s * 0.5 - s * 0.135 + j(side + 4), cy - s * 0.11 + j(side + 6), s * 0.27, s * 0.44);
+        }
+      }
+      ctx.font = serif(h * 0.12);
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(40,36,32,0.5)';
+      ctx.fillText('KORA?', cx, h * 0.18);
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(40,36,32,0.18)';
+      [1, 2].forEach((k) => {
+        ctx.beginPath();
+        ctx.moveTo((w * k) / 3, 0);
+        ctx.lineTo((w * k) / 3, h);
+        ctx.moveTo(0, (h * k) / 3);
+        ctx.lineTo(w, (h * k) / 3);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+      ctx.lineWidth = 1;
+    } else if (sId === 'style') {
+      finalFrame(ctx, 0, 0, w, h, time, false);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.font = `600 ${Math.max(9, h * 0.028)}px "IBM Plex Mono", monospace`;
+      ctx.textAlign = 'left';
+      ctx.fillText('STILL FRAME · FOR APPROVAL', 16, 24);
+    } else if (sId === 'anim') {
+      finalFrame(ctx, 0, 0, w, h, time, true);
+    } else if (sId === 'sound') {
+      finalFrame(ctx, 0, 0, w, h, time, true);
+      ctx.fillStyle = '#ff7a3d';
+      for (let i = 0; i < 80; i++) {
+        const v = Math.abs(Math.sin(i * 0.7 + time * 6) * Math.sin(i * 0.13 + time));
+        const bh = 2 + v * h * 0.08;
+        ctx.fillRect(w * 0.1 + i * (w * 0.8) / 80, h * 0.78 - bh / 2, 2, bh);
+      }
+      drawSub(ctx, w, h, Math.sin(time * 1.6) > 0 ? '[ air ]' : '[ soft impact ]');
+    } else {
+      ctx.fillStyle = '#e9e4dc';
+      ctx.fillRect(0, 0, w, h);
+      const gap = w * 0.04;
+      const H = h * 0.62;
+      const sizes = [
+        { lw: (H * 16) / 9, lh: H, label: '16:9' },
+        { lw: (H * 9) / 16, lh: H, label: '9:16' },
+        { lw: H, lh: H, label: '1:1' },
+      ];
+      const scale = Math.min(1, (w * 0.9 - gap * 2) / sizes.reduce((a, b) => a + b.lw, 0));
+      let x = (w - (sizes.reduce((a, b) => a + b.lw, 0) * scale + gap * 2)) / 2;
+      for (const f of sizes) {
+        const fw = f.lw * scale;
+        const fh = f.lh * scale;
+        const fy = (h - fh) / 2 - 8;
+        finalFrame(ctx, x, fy, fw, fh, time, true);
+        ctx.fillStyle = '#3a342c';
+        ctx.font = `600 ${Math.max(9, h * 0.03)}px "IBM Plex Mono", monospace`;
+        ctx.textAlign = 'center';
+        ctx.fillText(f.label, x + fw / 2, fy + fh + 18);
+        x += fw + gap;
+      }
     }
   });
 
-  const scrub = (clientX: number) => {
-    if (auto.current) {
-      window.clearInterval(auto.current);
-      auto.current = null;
-    }
-    const r = trackRef.current!.getBoundingClientRect();
-    go(clamp((clientX - r.left) / r.width) * (STEPS.length - 1));
-  };
-
   return (
-    <Panel
-      id="process"
-      num="11"
-      title="Process"
-      theme="paper"
-      question="How do we work together?"
-      headline={['From a simple idea', 'to a finished film.']}
-      body={<p>Six clear steps. You always know what is happening, what I need from you, and what you get next.</p>}
-      forYou={{ text: 'No surprises: you approve the direction and the look before animation starts, so the final film is what you expected, only better.' }}
-      actions={<PillButton onClick={play}>Walk me through it</PillButton>}
-    >
-      <div className="pr-stage" ref={wrapRef}>
-        <div
-          className="pr-track"
-          ref={trackRef}
-          onPointerDown={(e) => {
-            e.currentTarget.setPointerCapture(e.pointerId);
-            scrub(e.clientX);
-          }}
-          onPointerMove={(e) => {
-            if (e.currentTarget.hasPointerCapture(e.pointerId)) scrub(e.clientX);
-          }}
-        >
-          <div className="pr-line" />
-          <div className="pr-fill" style={{ width: `${(step / (STEPS.length - 1)) * 100}%` }} />
-          {STEPS.map((s, i) => (
-            <button key={s.id} className={`pr-step ${i <= step ? 'is-on' : ''}`} style={{ left: `${(i / (STEPS.length - 1)) * 100}%` }} onClick={() => go(i)}>
-              <span>{s.id}</span>
-              <i />
-            </button>
-          ))}
-        </div>
-        <canvas className="pr-canvas" ref={canvasRef} />
-        <div className="pr-detail" key={step}>
-          <div>
-            <span>What I do</span>
-            <p>{STEPS[step].me}</p>
-          </div>
-          <div>
-            <span>What you do</span>
-            <p>{STEPS[step].you}</p>
-          </div>
-          <div>
-            <span>What you get</span>
-            <p>{STEPS[step].get}</p>
-          </div>
-        </div>
-      </div>
+    <Panel id="process" num="11" title="Process" theme="paper" headline={['From idea', 'to film.']} body={<p>Six steps. You approve at every stage.</p>}>
+      <Monitor
+        canvasRef={canvasRef}
+        wrapRef={wrapRef}
+        tone="light"
+        caption={<span className="mon-word" key={step}>{STEPS[step].line}</span>}
+        controls={
+          <Segment
+            boxed
+            options={STEPS.map((s) => ({ id: s.id, label: s.label }))}
+            value={STEPS[step].id}
+            onChange={(id) => {
+              auto.current = false;
+              setStep(STEPS.findIndex((s) => s.id === id));
+            }}
+          />
+        }
+      />
     </Panel>
   );
 }

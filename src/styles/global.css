@@ -627,3 +627,34 @@ p { margin: 0; }
 @media (max-width: 900px) {
   .panel-visual { min-height: clamp(360px, 56vh, 560px); }
 }
+
+/* ───────────── v5: the monitor stage — visuals first ───────────── */
+.mon-stage { position: relative; height: 100%; min-height: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.mon {
+  position: relative; width: min(100%, calc(62vh * 16 / 9), 980px); aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden;
+  box-shadow: 0 34px 70px -38px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.mon--light { box-shadow: 0 34px 70px -40px rgba(40, 30, 20, 0.45), 0 0 0 1px rgba(20, 20, 20, 0.08); }
+.mon canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.mon-cap { min-height: 1.6em; text-align: center; }
+.mon-word { display: inline-block; font-family: var(--serif); font-size: clamp(20px, 2vw, 30px); line-height: 1.2; animation: fade-up 0.5s var(--ease-out); }
+.mon-controls { display: flex; justify-content: center; max-width: 100%; }
+.mon-controls .segment { justify-content: center; }
+.acts { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.acts button { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+.acts button i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.acts button.is-past { color: var(--fg); }
+.acts button.is-on { background: var(--orange); border-color: var(--orange); color: #fff; }
+
+/* text steps back: big short headline, one line */
+.panel-copy { gap: 18px; }
+.panel-h { font-size: clamp(42px, 4.8vw, 82px); }
+.panel-body p { font-size: 16px; max-width: 280px; }
+@media (max-width: 1240px) and (min-width: 901px) {
+  .panel { grid-template-columns: minmax(220px, 26%) minmax(0, 1fr); }
+  .panel-copy, .panel:not(:has(.panel-aside)) .panel-copy { grid-row: 2 / span 2; align-self: center; }
+}
+@media (max-width: 900px) {
+  .mon { width: 100%; }
+  .mon-controls .segment--boxed button { padding: 8px 10px; }
+}
