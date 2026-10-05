@@ -2,8 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { Monitor } from '../components/Monitor';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useArmedSound, useCanvasLoop } from '../motion/hooks';
-import { drawHeadphones, serif } from '../motion/kora';
+import { serif } from '../motion/kora';
 import { clamp, crossed, easeOut, lerp, rand } from '../motion/math';
 
 /**
@@ -104,7 +105,7 @@ export function Story() {
     if (t >= ACTS[1].at) {
       const d = clamp((t - ACTS[1].at) / (LAND - ACTS[1].at));
       const fall = d < 1 ? -h * 0.6 * (1 - d * d) : Math.exp(-(t - LAND) * 9) * Math.sin((t - LAND) * 30) * h * 0.008;
-      drawHeadphones(ctx, 0, -h * 0.255 + fall, h * 0.11, '#fff3e6', '#ff5a1f');
+      brandStore.get().draw(ctx, h * 0.1, -h * 0.13 + fall, h * 0.12, time);
     }
     ctx.restore();
     if (t > LAND && t < LAND + 0.8) {
@@ -124,9 +125,9 @@ export function Story() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = serif(h * 0.13);
-      ctx.fillText('KORA', cx, h * 0.14);
+      ctx.fillText(brandStore.get().name, cx, h * 0.14);
       ctx.font = `600 ${Math.max(9, h * 0.03)}px "IBM Plex Mono", monospace`;
-      ctx.fillText('HEAR EVERYTHING.', cx, h * 0.22);
+      ctx.fillText(brandStore.get().tagline.toUpperCase(), cx, h * 0.22);
       ctx.globalAlpha = 1;
     }
   });

@@ -1,158 +1,168 @@
 import { useRef, useState } from 'react';
 import { audio } from '../audio/engine';
+import { brandStore, useBrand } from '../brand/brands';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
 import { useArmedSound, useCanvasLoop } from '../motion/hooks';
-import { drawBackdrop, serif } from '../motion/kora';
-import { clamp, damp, lerp, rand } from '../motion/math';
+import { clamp, crossed, easeOut, lerp } from '../motion/math';
 
 /**
- * 04 — WEIGHT
- * The same KORA box, dropped again and again. Only gravity, bounce and the
- * world's reaction change — and with them, how heavy it feels.
+ * 04 — MAKE IT FEEL EXPENSIVE
+ * The client's product is set down three ways. How it lands — fast and
+ * bouncy, or slow and controlled — is how much it seems to be worth.
  */
-type Mass = 'feather' | 'light' | 'medium' | 'heavy' | 'massive';
-const MASS: Record<Mass, { label: string; word: string; g: number; rest: number; squash: number; shake: number; dust: number; m: number; cycle: number }> = {
-  feather: { label: 'Feather', word: 'Weightless. It drifts.', g: 0, rest: 0, squash: 0, shake: 0, dust: 0, m: 0, cycle: 4.6 },
-  light: { label: 'Light', word: 'Light. It bounces.', g: 4.2, rest: 0.62, squash: 0.32, shake: 0, dust: 0, m: 0.1, cycle: 3 },
-  medium: { label: 'Medium', word: 'Solid. It lands.', g: 5.2, rest: 0.3, squash: 0.14, shake: 0.006, dust: 6, m: 0.42, cycle: 3 },
-  heavy: { label: 'Heavy', word: 'Heavy. It hits hard.', g: 6.4, rest: 0.1, squash: 0.06, shake: 0.018, dust: 18, m: 0.72, cycle: 3 },
-  massive: { label: 'Massive', word: 'Massive. The world shakes.', g: 7.6, rest: 0.02, squash: 0.02, shake: 0.04, dust: 40, m: 1, cycle: 3.2 },
+type Feel = 'cheap' | 'solid' | 'lux';
+const CYCLE = 3.8;
+const FEEL: Record<Feel, { label: string; word: string }> = {
+  cheap: { label: 'Cheap', word: 'Feels cheap.' },
+  solid: { label: 'Solid', word: 'Feels solid.' },
+  lux: { label: 'Luxurious', word: 'Feels expensive.' },
 };
+
+/** height above the surface (0 = resting), rotation and squash at time t */
+function pose(feel: Feel, t: number) {
+  if (feel === 'cheap') {
+    const fall = 0.42;
+    if (t < fall) return { y: 1 - (t / fall) ** 2, rot: 0, sq: 0 };
+    const b = t - fall;
+    const y = Math.abs(Math.sin(b * 11)) * Math.exp(-b * 3.2) * 0.32;
+    return { y, rot: Math.sin(b * 17) * Math.exp(-b * 2.5) * 0.16, sq: y < 0.02 ? Math.exp(-b * 4) * 0.12 : 0 };
+  }
+  if (feel === 'solid') {
+    const fall = 0.55;
+    if (t < fall) return { y: 0.7 * (1 - (t / fall) ** 2), rot: 0, sq: 0 };
+    const b = t - fall;
+    return { y: b < 0.25 ? Math.sin((b / 0.25) * Math.PI) * 0.05 : 0, rot: 0, sq: b < 0.1 ? 0.05 : 0 };
+  }
+  // luxurious: lowered by an invisible hand, no bounce at all
+  return { y: 0.45 * (1 - easeOut(clamp(t / 1.5))), rot: 0, sq: 0 };
+}
+const LANDS: Record<Feel, number[]> = { cheap: [0.42, 0.7, 0.98], solid: [0.55], lux: [1.45] };
 
 export function Weight() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const brand = useBrand();
   const { armed, arm } = useArmedSound(wrapRef);
-  const [mass, setMass] = useState<Mass>('medium');
-  const massRef = useRef<Mass>('medium');
-  const st = useRef({
-    t: 99,
-    y: 0,
-    vy: 0,
-    sq: 0,
-    sv: 0,
-    shake: 0,
-    dust: [] as { x: number; y: number; vx: number; vy: number; life: number }[],
-  });
+  const [feel, setFeel] = useState<Feel>('cheap');
+  const feelRef = useRef<Feel>('cheap');
+  const st = useRef({ t0: performance.now() / 1000, prev: 0, marble: null as HTMLCanvasElement | null, mw: 0, mh: 0, layer: null as HTMLCanvasElement | null });
 
-  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
+  useCanvasLoop(canvasRef, (ctx, w, h) => {
     const s = st.current;
-    const M = MASS[massRef.current];
-    const floor = h * 0.8;
-    const bw = h * 0.3;
-    const bh = h * 0.32;
-    const top = -bh * 0.2;
-    // units: heights per second, so physics is the same at every screen size
-    s.t += dt;
-    if (s.t > M.cycle) {
-      s.t = 0;
-      s.y = top;
-      s.vy = 0;
-    }
-    if (M.g === 0) {
-      // a feather: slow fall, swaying
-      s.y = lerp(top, floor - bh, clamp(s.t / (M.cycle * 0.85)));
-    } else {
-      s.vy += M.g * h * dt;
-      s.y += s.vy * dt;
-      if (s.y > floor - bh) {
-        s.y = floor - bh;
-        const strength = clamp(s.vy / (h * 3.2));
-        if (s.vy > h * 0.25) {
-          if (armed.current) audio.impact(M.m, strength);
-          s.sv -= strength * M.squash * 14;
-          s.shake = Math.max(s.shake, strength * M.shake * h);
-          for (let i = 0; i < M.dust * strength; i++) {
-            const dir = Math.random() < 0.5 ? -1 : 1;
-            s.dust.push({ x: w / 2 + dir * rand(bw * 0.3, bw * 0.6), y: floor, vx: dir * rand(0.1, 0.7) * h, vy: -rand(0.05, 0.5) * h, life: 1 });
-          }
+    const B = brandStore.get();
+    const f = feelRef.current;
+    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    if (armed.current) {
+      LANDS[f].forEach((at, i) => {
+        if (crossed(s.prev, t, at)) {
+          if (f === 'cheap') audio.click(2400 - i * 300, 0.18 / (i + 1));
+          else B.place(f === 'lux' ? 1 : 0.5, f === 'lux' ? 0.45 : 0.7);
         }
-        s.vy = -s.vy * M.rest;
-        if (Math.abs(s.vy) < h * 0.08) s.vy = 0;
-      }
+      });
+      if (f === 'lux' && crossed(s.prev, t, 1.8)) B.moment[2].play();
     }
-    s.sv += (-s.sq * 300 - s.sv * 16) * dt;
-    s.sq += s.sv * dt;
-    s.shake = damp(s.shake, 0, 7, dt);
+    s.prev = t;
 
-    ctx.save();
-    if (s.shake > 0.3) ctx.translate(rand(-1, 1) * s.shake, rand(-1, 1) * s.shake * 0.6);
-    drawBackdrop(ctx, w, h, '#ece8e1', '#d9d3c9');
-    ctx.fillStyle = 'rgba(20,18,16,0.12)';
-    ctx.fillRect(-20, floor, w + 40, 1);
-
-    // shadow tells the height
-    const height = clamp((floor - bh - s.y) / (floor - bh - top));
-    ctx.fillStyle = `rgba(20,18,16,${lerp(0.3, 0.06, height)})`;
-    ctx.beginPath();
-    ctx.ellipse(w / 2, floor + 2, bw * lerp(0.62, 0.3, height), bh * 0.06, 0, 0, Math.PI * 2);
-    ctx.fill();
-
-    // the box
-    const sway = M.g === 0 ? Math.sin(time * 2.2) * w * 0.06 : 0;
-    const rot = M.g === 0 ? Math.sin(time * 2.2 + 0.6) * 0.18 : 0;
-    const sq = clamp(s.sq, -0.35, 0.35);
-    ctx.save();
-    ctx.translate(w / 2 + sway, s.y + bh);
-    ctx.rotate(rot);
-    ctx.scale(1 - sq * 0.6, 1 + sq);
-    ctx.translate(-bw / 2, -bh);
-    ctx.fillStyle = '#1d1c1a';
-    ctx.beginPath();
-    ctx.roundRect(0, 0, bw, bh, bw * 0.06);
-    ctx.fill();
-    ctx.fillStyle = '#ff5a1f';
-    ctx.fillRect(0, bh * 0.68, bw, bh * 0.07);
-    ctx.fillStyle = '#efe9df';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = serif(bh * 0.22);
-    ctx.fillText('KORA', bw / 2, bh * 0.4);
-    ctx.restore();
-
-    // dust
-    ctx.fillStyle = '#8a8378';
-    for (let i = s.dust.length - 1; i >= 0; i--) {
-      const d = s.dust[i];
-      d.vy += h * 1.4 * dt;
-      d.x += d.vx * dt;
-      d.y += d.vy * dt;
-      d.vx *= Math.exp(-3 * dt);
-      if (d.y > floor) {
-        d.y = floor;
-        d.vy *= -0.2;
+    // marble, drawn once per size
+    if (!s.marble || s.mw !== w || s.mh !== h) {
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const g = c.getContext('2d')!;
+      const bg = g.createLinearGradient(0, 0, 0, h);
+      bg.addColorStop(0, '#d8d2ca');
+      bg.addColorStop(0.68, '#c9c2b8');
+      bg.addColorStop(0.68, '#f1ede7');
+      bg.addColorStop(1, '#dcd6cd');
+      g.fillStyle = bg;
+      g.fillRect(0, 0, w, h);
+      g.strokeStyle = 'rgba(120,110,100,0.18)';
+      for (let i = 0; i < 9; i++) {
+        g.lineWidth = 0.6 + Math.random();
+        g.beginPath();
+        let x = Math.random() * w;
+        let y = h * 0.68;
+        g.moveTo(x, y);
+        while (y < h) {
+          x += (Math.random() - 0.4) * 40;
+          y += 8 + Math.random() * 14;
+          g.lineTo(x, y);
+        }
+        g.stroke();
       }
-      d.life -= dt * 0.9;
-      if (d.life <= 0) {
-        s.dust.splice(i, 1);
-        continue;
-      }
-      ctx.globalAlpha = d.life * 0.7;
-      ctx.fillRect(d.x, d.y - 2, 2.5, 2.5);
+      s.marble = c;
+      s.mw = w;
+      s.mh = h;
     }
-    ctx.globalAlpha = 1;
-    ctx.restore();
+    ctx.drawImage(s.marble, 0, 0, w, h);
+
+    const surface = h * 0.72;
+    const size = h * 0.42;
+    const p = pose(f, t);
+    const lift = p.y * h * 0.6;
+    const cy = surface - size / 2 - lift;
+    // soft shadow
+    ctx.fillStyle = `rgba(40,30,20,${lerp(0.28, 0.05, clamp(p.y * 1.5))})`;
+    ctx.beginPath();
+    ctx.ellipse(w / 2, surface, size * lerp(0.42, 0.2, clamp(p.y * 1.5)), size * 0.04, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // reflection on polished marble, only when it is luxurious
+    if (f === 'lux') {
+      ctx.save();
+      ctx.globalAlpha = 0.14;
+      ctx.translate(0, surface * 2);
+      ctx.scale(1, -1);
+      B.draw(ctx, w / 2, cy, size);
+      ctx.restore();
+    }
+    // the product is drawn on its own layer so the light can sweep across it alone
+    if (!s.layer || s.layer.width !== w || s.layer.height !== h) {
+      s.layer = document.createElement('canvas');
+      s.layer.width = w;
+      s.layer.height = h;
+    }
+    const lc = s.layer.getContext('2d')!;
+    lc.clearRect(0, 0, w, h);
+    lc.save();
+    lc.translate(w / 2, cy + size / 2);
+    lc.rotate(p.rot);
+    lc.scale(1 + p.sq, 1 - p.sq);
+    B.draw(lc, 0, -size / 2, size);
+    lc.restore();
+    if (f === 'lux' && t > 1.6 && t < 2.8) {
+      const k = (t - 1.6) / 1.2;
+      const sx = lerp(w / 2 - size * 0.6, w / 2 + size * 0.6, easeOut(k));
+      const g = lc.createLinearGradient(sx - size * 0.14, 0, sx + size * 0.14, 0);
+      g.addColorStop(0, 'rgba(255,255,255,0)');
+      g.addColorStop(0.5, `rgba(255,255,255,${0.55 * Math.sin(k * Math.PI)})`);
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      lc.globalCompositeOperation = 'source-atop';
+      lc.fillStyle = g;
+      lc.fillRect(0, 0, w, h);
+      lc.globalCompositeOperation = 'source-over';
+    }
+    ctx.drawImage(s.layer, 0, 0, w, h);
   });
 
   return (
-    <Panel id="weight" num="04" title="Weight" theme="paper" headline={['Heavy', 'or light?']} body={<p>Same box. Only the motion changes.</p>}>
+    <Panel id="weight" num="04" title="Value" theme="paper" headline={['Make it feel', 'expensive.']} body={<p>How it lands is what it seems to be worth.</p>}>
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
         tone="light"
-        caption={<span className="mon-word" key={mass}>{MASS[mass].word}</span>}
+        caption={<span className="mon-word" key={feel + brand.id}>{FEEL[feel].word}</span>}
         controls={
           <Segment
             boxed
-            options={(Object.keys(MASS) as Mass[]).map((id) => ({ id, label: MASS[id].label }))}
-            value={mass}
-            onChange={(m) => {
+            options={(Object.keys(FEEL) as Feel[]).map((id) => ({ id, label: FEEL[id].label }))}
+            value={feel}
+            onChange={(v) => {
               void arm();
-              setMass(m);
-              massRef.current = m;
-              st.current.t = 99;
+              setFeel(v);
+              feelRef.current = v;
+              st.current.t0 = performance.now() / 1000;
             }}
           />
         }

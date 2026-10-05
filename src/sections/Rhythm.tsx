@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { PillButton, Segment, Slider } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useCanvasLoop, useInView, useSoundEnabled } from '../motion/hooks';
-import { drawHeadphones } from '../motion/kora';
 import { clamp, easeOut, lerp, rand } from '../motion/math';
 
 /**
@@ -56,27 +56,29 @@ function drawShot(ctx: CanvasRenderingContext2D, shot: number, x: number, y: num
   ctx.scale(push, push);
   ctx.translate(-cx, -cy);
   const serif = (size: number) => `${size}px "Instrument Serif", Georgia, serif`;
+  const B = brandStore.get();
+  const [first, ...rest] = B.tagline.split(' ');
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   if (shot === 0) {
-    ctx.fillStyle = '#ff5a1f';
+    ctx.fillStyle = B.accent;
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#fff5ec';
     ctx.font = serif(h * 0.5);
     ctx.fillText('New.', cx, cy);
   } else if (shot === 1) {
-    ctx.fillStyle = '#141312';
+    ctx.fillStyle = B.dark[0];
     ctx.fillRect(x, y, w, h);
-    drawHeadphones(ctx, cx, cy - h * 0.02, h * 0.5);
+    B.draw(ctx, cx, cy, h * 0.6, time);
   } else if (shot === 2) {
     ctx.fillStyle = '#efe9df';
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#141312';
     ctx.font = serif(h * 0.36);
-    ctx.fillText('Hear', cx, cy - h * 0.13);
+    ctx.fillText(first, cx, cy - h * 0.13);
     ctx.font = `italic ${serif(h * 0.36)}`;
     ctx.fillStyle = '#ff5a1f';
-    ctx.fillText('everything.', cx, cy + h * 0.2);
+    ctx.fillText(rest.join(' '), cx, cy + h * 0.2);
   } else if (shot === 3) {
     ctx.fillStyle = '#141312';
     ctx.fillRect(x, y, w, h);
@@ -95,10 +97,10 @@ function drawShot(ctx: CanvasRenderingContext2D, shot: number, x: number, y: num
     ctx.fillRect(x, y, w, h);
     ctx.fillStyle = '#efe9df';
     ctx.font = serif(h * 0.3);
-    ctx.fillText('KORA', cx, cy - h * 0.04);
+    ctx.fillText(B.name, cx, cy - h * 0.04);
     ctx.font = `600 ${Math.max(8, h * 0.045)}px "IBM Plex Mono", monospace`;
     ctx.fillStyle = '#ff7a45';
-    ctx.fillText('PRE-ORDER NOW', cx, cy + h * 0.22);
+    ctx.fillText('SHOP NOW', cx, cy + h * 0.22);
   }
   ctx.restore();
 }

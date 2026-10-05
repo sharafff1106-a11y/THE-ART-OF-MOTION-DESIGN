@@ -1,172 +1,162 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import gsap from 'gsap';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { useInView, useSoundEnabled } from '../motion/hooks';
+import { BrandPicker } from '../brand/BrandPicker';
+import { brandStore, useBrand } from '../brand/brands';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
+import { useArmedSound, useCanvasLoop, useInView } from '../motion/hooks';
+import { serif } from '../motion/kora';
+import { clamp, crossed, easeOut, lerp } from '../motion/math';
 import { scrollToId } from '../motion/scroll';
 
 /**
- * 01 — The pitch, demonstrated on one sentence.
- * The visitor switches Motion and Sound on and off and experiences what
- * each one adds to exactly the same words.
+ * 01 — The pitch. The visitor says what they sell; their kind of product is
+ * revealed three ways: static, with motion, with motion and sound.
  */
-const LINES = [['Your', 'message'], ['deserves', 'to', 'be'], ['felt.']];
-const CAPTIONS = {
-  none: 'Words alone. Easy to ignore.',
-  motion: 'With motion. Now you watch.',
-  sound: 'Sound alone. A mood, nothing to see.',
-  both: 'Motion and sound. Now you feel it.',
+type Mode = 'static' | 'motion' | 'sound';
+const CYCLE = 5.6;
+const RISE = 0.3;
+const LAND = 1.3;
+const NAME = 1.6;
+const TAG = 2.4;
+const CAPTION: Record<Mode, string> = {
+  static: 'A picture.',
+  motion: 'A moment.',
+  sound: 'A moment you can feel.',
 };
 
 export function Hero() {
   const ref = useRef<HTMLElement>(null);
-  const stageRef = useRef<HTMLHeadingElement>(null);
-  const tl = useRef<gsap.core.Timeline | null>(null);
-  const idle = useRef<gsap.core.Tween | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const shown = useInView(ref, { threshold: 0.1, once: true });
-  const soundOn = useSoundEnabled();
-  const [motion, setMotion] = useState(true);
-  const [sound, setSound] = useState(false);
-  const [hint, setHint] = useState(false);
-  const state = motion && sound ? 'both' : motion ? 'motion' : sound ? 'sound' : 'none';
+  const brand = useBrand();
+  const { armed, arm } = useArmedSound(wrapRef);
+  const [mode, setMode] = useState<Mode>('motion');
+  const modeRef = useRef<Mode>('motion');
+  const st = useRef({ t0: performance.now() / 1000, prev: 0 });
 
-  // if sound is switched off globally, the hero follows
-  useEffect(() => {
-    if (!soundOn) setSound(false);
-  }, [soundOn]);
+  // restart the reveal whenever the product changes
+  useEffect(() => brandStore.subscribe(() => (st.current.t0 = performance.now() / 1000)), []);
 
-  // invite the first click after a moment of stillness
-  useEffect(() => {
-    if (motion || sound) return setHint(false);
-    const id = window.setTimeout(() => setHint(true), 2200);
-    return () => window.clearTimeout(id);
-  }, [motion, sound]);
-
-  const reset = () => {
-    tl.current?.kill();
-    idle.current?.kill();
-    const q = gsap.utils.selector(stageRef);
-    gsap.set(q('.hk-ch'), { clearProps: 'all' });
-    gsap.set(q('.hk-felt'), { clearProps: 'all' });
-    gsap.set(q('.hk-line-draw'), { strokeDashoffset: 1 });
-  };
-
-  const run = (withMotion: boolean, withSound: boolean) => {
-    reset();
-    const q = gsap.utils.selector(stageRef);
-    const t = gsap.timeline();
-    const sfx = (fn: () => void) => () => {
-      if (withSound) fn();
-    };
-    const l1 = q('.hk-l0 .hk-ch');
-    const l2 = q('.hk-l1 .hk-ch');
-    if (withMotion) {
-      t.from(l1, { yPercent: 115, rotate: 8, opacity: 0, duration: 0.9, ease: 'back.out(1.7)', stagger: 0.04 }, 0)
-        .from(l2, { yPercent: -110, opacity: 0, duration: 0.8, ease: 'expo.out', stagger: 0.025 }, 0.75)
-        // anticipation: the last word gathers itself before it lands
-        .fromTo(q('.hk-felt'), { scale: 0.6, opacity: 0, yPercent: 20 }, { scale: 0.86, opacity: 1, yPercent: 0, duration: 0.45, ease: 'power2.out' }, 1.45)
-        .to(q('.hk-felt'), { scale: 1, color: '#ff5a1f', duration: 1.1, ease: 'elastic.out(1, 0.45)' }, 2.05)
-        .to(q('.hk-line-draw'), { strokeDashoffset: 0, duration: 0.7, ease: 'power3.inOut' }, 2.3);
-    } else {
-      t.to({}, { duration: 2.6 });
+  useCanvasLoop(canvasRef, (ctx, w, h, _dt, time) => {
+    const s = st.current;
+    const B = brandStore.get();
+    const m = modeRef.current;
+    const t = m === 'static' ? CYCLE - 1 : (performance.now() / 1000 - s.t0) % CYCLE;
+    if (m === 'sound' && armed.current) {
+      if (crossed(s.prev, t, RISE)) audio.whoosh(LAND - RISE, 0.12);
+      if (crossed(s.prev, t, LAND)) B.place(0.8, 0.6);
+      if (crossed(s.prev, t, NAME)) B.moment[2].play();
+      if (crossed(s.prev, t, TAG)) audio.tone(392, 2, 0.03, { send: 0.6 });
     }
-    // the same score plays whether or not there is anything to watch
-    l1.forEach((_, i) => t.call(sfx(() => audio.click(1700 + i * 140, 0.1)), [], i * 0.04 + 0.12));
-    t.call(sfx(() => audio.whoosh(0.6, 0.14)), [], 0.7)
-      .call(sfx(() => audio.tone(220, 0.9, 0.04)), [], 1.45)
-      .call(sfx(() => audio.impact(0.7, 0.8)), [], 2.05)
-      .call(sfx(() => [523.3, 659.3, 784].forEach((f, i) => audio.tone(f, 2.2, 0.035, { when: audio.ctx ? audio.ctx.currentTime + i * 0.06 : undefined }))), [], 2.1);
-    if (withMotion) {
-      t.call(() => {
-        idle.current = gsap.to(q('.hk-felt'), { yPercent: -4, duration: 1.8, ease: 'sine.inOut', yoyo: true, repeat: -1 });
-      });
-    }
-    tl.current = t;
-  };
+    s.prev = t;
 
-  useLayoutEffect(() => () => reset(), []);
+    // backdrop with a slow light sweep
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, B.dark[0]);
+    g.addColorStop(1, B.dark[1]);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    const lightX = m === 'static' ? w * 0.5 : lerp(-w * 0.3, w * 0.5, easeOut(clamp(t / 1.6)));
+    const glow = ctx.createRadialGradient(lightX, h * 0.42, 0, lightX, h * 0.42, h * 0.7);
+    glow.addColorStop(0, 'rgba(255,240,220,0.16)');
+    glow.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
 
-  // the first impression plays by itself; the switches come after
-  const played = useRef(false);
-  useEffect(() => {
-    if (shown && !played.current) {
-      played.current = true;
-      run(true, false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shown]);
+    const floor = h * 0.74;
+    const size = h * 0.46;
+    const k = easeOut(clamp((t - RISE) / (LAND - RISE)));
+    const settle = t > LAND ? Math.exp(-(t - LAND) * 6) * Math.sin((t - LAND) * 14) * h * 0.012 : 0;
+    const py = lerp(h + size, floor - size / 2, k) + settle + (t > LAND ? Math.sin(time * 1.2) * h * 0.006 : 0);
+    // reflection and shadow
+    ctx.globalAlpha = 0.18 * k;
+    ctx.save();
+    ctx.translate(0, floor * 2);
+    ctx.scale(1, -1);
+    B.draw(ctx, w / 2, py, size);
+    ctx.restore();
+    ctx.globalAlpha = 1;
+    const fade = ctx.createLinearGradient(0, floor, 0, h);
+    fade.addColorStop(0, 'rgba(0,0,0,0.2)');
+    fade.addColorStop(1, B.dark[1]);
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, floor, w, h - floor);
+    B.draw(ctx, w / 2, py, size, time);
 
-  const toggleMotion = () => {
-    const m = !motion;
-    setMotion(m);
-    audio.click(m ? 2200 : 1400, 0.1);
-    run(m, sound);
-  };
-  const toggleSound = async () => {
-    const s = !sound;
-    if (s) await audio.enable();
-    setSound(s);
-    run(motion, s);
-  };
+    // the name, letter by letter
+    const letters = [...B.name];
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = serif(h * 0.11);
+    const total = ctx.measureText(B.name).width;
+    let x = w / 2 - total / 2;
+    letters.forEach((c, i) => {
+      const lw = ctx.measureText(c).width;
+      const lk = easeOut(clamp((t - NAME - i * 0.06) / 0.5));
+      ctx.globalAlpha = lk;
+      ctx.fillStyle = '#f3ece2';
+      ctx.fillText(c, x + lw / 2, h * 0.16 + (1 - lk) * h * 0.04);
+      x += lw;
+    });
+    ctx.globalAlpha = easeOut(clamp((t - TAG) / 0.6));
+    ctx.font = serif(h * 0.05, true);
+    ctx.fillStyle = B.accent;
+    ctx.fillText(B.tagline, w / 2, h * 0.88);
+    ctx.globalAlpha = 1;
+  });
 
   return (
-    <section ref={ref} id="understanding" data-theme="ivory" data-num="01" className={`panel panel--ivory hero hero--type ${shown ? 'is-in' : ''} is-${state}`}>
-      <div className="hk-top">
+    <section ref={ref} id="understanding" data-theme="ivory" data-num="01" className={`panel panel--ivory hero hero--pitch ${shown ? 'is-in' : ''}`}>
+      <div className="hp-copy">
         <p className="hero-eyebrow">Gaurav · Motion &amp; Sound Designer</p>
-        <p className="hk-intro">What motion and sound can do for your brand.</p>
-      </div>
-
-      <h1 className="hk-stage" ref={stageRef} aria-label="Your message deserves to be felt.">
-        {LINES.map((line, li) => (
-          <span key={li} className={`hk-line hk-l${li}`} aria-hidden>
-            {line.map((word, wi) =>
-              li === 2 ? (
-                <span key={wi} className="hk-w hk-felt">
-                  {word}
-                  <svg className="hk-under" viewBox="0 0 200 20" preserveAspectRatio="none">
-                    <path className="hk-line-draw" d="M2 14 C 60 4, 140 4, 198 12" pathLength={1} strokeDasharray="1" strokeDashoffset="1" />
-                  </svg>
-                </span>
-              ) : (
-                <span key={wi} className="hk-w">
-                  {[...word].map((c, ci) => (
-                    <span key={ci} className="hk-ch">
-                      {c}
-                    </span>
-                  ))}
-                </span>
-              ),
-            )}
+        <h1 className="hp-h">
+          <span className="line">
+            <span style={{ ['--i' as string]: 0 }}>What can motion</span>
           </span>
-        ))}
-      </h1>
-
-      <div className="hk-controls">
-        <div className="hk-switches">
-          <button className={`hk-switch ${motion ? 'is-on' : ''} ${hint && !motion ? 'is-hint' : ''}`} onClick={toggleMotion} aria-pressed={motion}>
-            <span className="hk-sw">
-              <i />
+          <span className="line">
+            <span style={{ ['--i' as string]: 1 }}>and sound do for</span>
+          </span>
+          <span className="line">
+            <span style={{ ['--i' as string]: 2 }}>
+              <em>your brand?</em>
             </span>
-            Motion
-          </button>
-          <button className={`hk-switch ${sound ? 'is-on' : ''}`} onClick={toggleSound} aria-pressed={sound}>
-            <span className="hk-sw">
-              <i />
-            </span>
-            Sound
-          </button>
-          <button className="hk-replay" onClick={() => run(motion, sound)} disabled={!motion && !sound}>
-            ↻ Replay
-          </button>
+          </span>
+        </h1>
+        <div className="hp-pick">
+          <p>What do you sell?</p>
+          <BrandPicker />
         </div>
-        <p className="hk-caption" key={state}>
-          {CAPTIONS[state]}
-        </p>
+        <button className="hk-start" onClick={() => scrollToId('attention')}>
+          <span>See it on your product</span>
+          <span className="hk-start-ico">↓</span>
+        </button>
       </div>
-
-      <button className="hk-start" onClick={() => scrollToId('attention')}>
-        <span>Start the presentation</span>
-        <span className="hk-start-ico">↓</span>
-      </button>
+      <div className="hp-stage">
+        <Monitor
+          canvasRef={canvasRef}
+          wrapRef={wrapRef}
+          caption={<span className="mon-word" key={mode + brand.id}>{CAPTION[mode]}</span>}
+          controls={
+            <Segment
+              boxed
+              options={[
+                { id: 'static', label: 'Static' },
+                { id: 'motion', label: 'Motion' },
+                { id: 'sound', label: 'Motion + sound' },
+              ]}
+              value={mode}
+              onChange={(v) => {
+                if (v === 'sound') void arm();
+                setMode(v);
+                modeRef.current = v;
+                st.current.t0 = performance.now() / 1000;
+              }}
+            />
+          }
+        />
+      </div>
     </section>
   );
 }

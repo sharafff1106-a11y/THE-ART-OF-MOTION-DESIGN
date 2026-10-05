@@ -1,109 +1,121 @@
 import { useRef, useState } from 'react';
-import { audio } from '../audio/engine';
+import { brandStore, useBrand } from '../brand/brands';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
 import { useArmedSound, useCanvasLoop } from '../motion/hooks';
-import { drawBackdrop, drawHeadphones, drawSub, serif } from '../motion/kora';
-import { clamp, crossed, easeOut, lerp } from '../motion/math';
+import { drawSub, serif } from '../motion/kora';
+import { clamp, crossed, easeOut, lerp, rand } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
 /**
  * 07 — SOUND
- * The KORA case closes: headphones drop in, the lid snaps, the light comes on.
- * The pictures never change. Switch the sound on and it becomes real.
+ * The client's product has its own sound: glass and mist, a can cracking
+ * open, a clasp, a squeak. The pictures never change; the sound makes it real.
  */
-const CYCLE = 3.6;
-const LAND = 0.85;
-const SNAP = 1.6;
-const LED = 2.1;
-const EVENTS = [
-  { at: LAND, label: '[ soft thud ]' },
-  { at: SNAP, label: '[ metal snap ]' },
-  { at: LED, label: '[ bright chime ]' },
-];
+const CYCLE = 3.8;
+const BEATS = [0.8, 1.6, 2.4];
 
 export function Sound() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const brand = useBrand();
   const { armed, arm } = useArmedSound(wrapRef);
   const [on, setOn] = useState<'off' | 'on'>('off');
   const onRef = useRef(false);
-  const st = useRef({ t0: performance.now() / 1000, prev: 0 });
+  const st = useRef({
+    t0: performance.now() / 1000,
+    prev: 0,
+    parts: [] as { x: number; y: number; vx: number; vy: number; life: number; r: number }[],
+  });
 
-  useCanvasLoop(canvasRef, (ctx, w, h) => {
+  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = st.current;
+    const B = brandStore.get();
     const t = (performance.now() / 1000 - s.t0) % CYCLE;
     const live = onRef.current && armed.current;
-    if (live) {
-      if (crossed(s.prev, t, 0.35)) audio.whoosh(0.45, 0.08);
-      if (crossed(s.prev, t, LAND)) audio.impact(0.45, 0.6);
-      if (crossed(s.prev, t, SNAP)) {
-        audio.burst(3200, 6, 0.03, 0.4);
-        audio.impact(0.25, 0.45);
+    const surface = h * 0.74;
+    const size = h * 0.44;
+    const cx = w / 2;
+
+    BEATS.forEach((at, i) => {
+      if (!crossed(s.prev, t, at)) return;
+      if (live) B.moment[i].play();
+      // the visual half of each beat, identical with sound on or off
+      if (i === 1) {
+        const n = B.id === 'drink' ? 30 : B.id === 'fragrance' ? 70 : 16;
+        for (let k = 0; k < n; k++) {
+          if (B.id === 'fragrance') s.parts.push({ x: cx + size * 0.12, y: surface - size * 0.92, vx: rand(40, 260), vy: rand(-90, 20), life: 1, r: rand(2, 7) });
+          else if (B.id === 'drink') s.parts.push({ x: cx + rand(-size * 0.12, size * 0.12), y: surface - size * 0.95, vx: rand(-15, 15), vy: rand(-140, -60), life: 1, r: rand(1.5, 4) });
+          else s.parts.push({ x: cx + rand(-size * 0.4, size * 0.4), y: surface, vx: rand(-120, 120), vy: rand(-90, -20), life: 0.8, r: rand(1.5, 3) });
+        }
       }
-      if (crossed(s.prev, t, LED)) [880, 1318.5].forEach((f, i) => audio.tone(f, 1.4, 0.04, { when: audio.ctx!.currentTime + i * 0.07, send: 0.5 }));
-    }
+    });
     s.prev = t;
 
-    drawBackdrop(ctx, w, h, '#1a1918', '#0b0b0a', 'rgba(255,255,255,0.05)');
-    const floor = h * 0.74;
-    ctx.fillStyle = 'rgba(255,255,255,0.07)';
-    ctx.fillRect(0, floor, w, 1);
-    const fade = t > CYCLE - 0.35 ? 1 - (t - (CYCLE - 0.35)) / 0.35 : Math.min(1, t / 0.2);
-    ctx.globalAlpha = fade;
-
-    const cw = h * 0.62;
-    const ch = h * 0.24;
-    const cx = w / 2;
-    const baseY = floor - ch;
-    // headphones drop into the case
-    const drop = clamp((t - 0.3) / (LAND - 0.3));
-    const hy = lerp(h * 0.05, baseY + ch * 0.32, drop * drop);
-    const settle = t > LAND ? Math.exp(-(t - LAND) * 10) * Math.sin((t - LAND) * 40) * h * 0.006 : 0;
-    drawHeadphones(ctx, cx, hy + settle, h * 0.27, '#d9d4cb', '#ff5a1f');
-    // case base (front plate)
-    ctx.fillStyle = '#2a2826';
-    ctx.beginPath();
-    ctx.roundRect(cx - cw / 2, baseY, cw, ch, ch * 0.3);
-    ctx.fill();
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, B.dark[0]);
+    g.addColorStop(1, B.dark[1]);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
-    ctx.fillRect(cx - cw / 2 + 6, baseY + 4, cw - 12, 2);
-    // the lid, hinged at the back
-    const close = easeOut(clamp((t - (SNAP - 0.4)) / 0.4));
-    const ang = lerp(-1.95, 0, close * close);
-    ctx.save();
-    ctx.translate(cx - cw / 2, baseY);
-    ctx.rotate(ang);
-    ctx.fillStyle = '#34312e';
+    ctx.fillRect(0, surface, w, 1);
+
+    const fade = t > CYCLE - 0.35 ? 1 - (t - (CYCLE - 0.35)) / 0.35 : 1;
+    ctx.globalAlpha = fade;
+    // the product arrives on the first beat
+    const k = clamp((t - 0.25) / (BEATS[0] - 0.25));
+    const y = lerp(-size, surface - size / 2, k * k);
+    const settle = t > BEATS[0] ? Math.exp(-(t - BEATS[0]) * 9) * Math.sin((t - BEATS[0]) * 30) * h * 0.008 : 0;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.beginPath();
-    ctx.roundRect(0, -ch * 0.38, cw, ch * 0.38, ch * 0.16);
+    ctx.ellipse(cx, surface, size * 0.4 * k, size * 0.035, 0, 0, Math.PI * 2);
     ctx.fill();
-    ctx.restore();
-    // the light
-    const led = t > LED ? 1 : 0;
-    if (led) {
-      ctx.globalAlpha = fade * 0.8;
-      drawSphere(ctx, 'glow', cx + cw * 0.36, baseY + ch * 0.5, h * 0.09);
-      ctx.globalAlpha = fade;
+    B.draw(ctx, cx, y + settle, size, time);
+
+    // particles: mist, bubbles or dust
+    for (let i = s.parts.length - 1; i >= 0; i--) {
+      const p = s.parts[i];
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= Math.exp(-1.6 * dt);
+      if (B.id !== 'fragrance' && B.id !== 'drink') p.vy += 300 * dt;
+      p.life -= dt * (B.id === 'fragrance' ? 0.6 : 0.9);
+      if (p.life <= 0) {
+        s.parts.splice(i, 1);
+        continue;
+      }
+      ctx.globalAlpha = fade * p.life * (B.id === 'fragrance' ? 0.35 : 0.7);
+      ctx.fillStyle = B.id === 'drink' ? 'rgba(255,240,200,1)' : '#e8e2d8';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r * (B.id === 'fragrance' ? 1 + (1 - p.life) * 2 : 1), 0, Math.PI * 2);
+      ctx.fill();
     }
-    ctx.fillStyle = led ? '#ffb48a' : '#4a4643';
-    ctx.beginPath();
-    ctx.arc(cx + cw * 0.36, baseY + ch * 0.5, h * 0.012, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'rgba(239,233,223,0.55)';
+    ctx.globalAlpha = fade;
+    // the shine on the third beat
+    if (t > BEATS[2] && t < BEATS[2] + 0.9) {
+      const e = (t - BEATS[2]) / 0.9;
+      ctx.globalAlpha = fade * Math.sin(e * Math.PI) * 0.9;
+      drawSphere(ctx, 'glow', cx + size * 0.18, surface - size * 0.75, size * 0.25);
+      ctx.fillStyle = '#fff';
+      const sx = cx + size * 0.18;
+      const sy = surface - size * 0.75;
+      const r = size * 0.12 * easeOut(Math.sin(e * Math.PI));
+      ctx.fillRect(sx - r, sy - 0.75, r * 2, 1.5);
+      ctx.fillRect(sx - 0.75, sy - r, 1.5, r * 2);
+    }
+    ctx.globalAlpha = fade * 0.9;
+    ctx.fillStyle = '#f3ece2';
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.font = serif(ch * 0.4);
-    ctx.fillText('KORA', cx - cw * 0.1, baseY + ch * 0.55);
+    ctx.font = serif(h * 0.08);
+    ctx.fillText(B.name, cx, h * 0.14);
     ctx.globalAlpha = 1;
 
-    // what you would hear, written on screen
     if (onRef.current) {
-      for (const e of EVENTS) {
-        const age = t - e.at;
-        if (age >= 0 && age < 0.9) drawSub(ctx, w, h, e.label, age < 0.7 ? 1 : 1 - (age - 0.7) / 0.2);
-      }
+      BEATS.forEach((at, i) => {
+        const age = t - at;
+        if (age >= 0 && age < 0.8) drawSub(ctx, w, h, B.moment[i].label, age < 0.6 ? 1 : 1 - (age - 0.6) / 0.2);
+      });
     }
   });
 
@@ -112,7 +124,7 @@ export function Sound() {
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
-        caption={<span className="mon-word" key={on}>{on === 'on' ? 'Feels real.' : 'Looks fine.'}</span>}
+        caption={<span className="mon-word" key={on + brand.id}>{on === 'on' ? 'Feels real. You can almost touch it.' : 'Looks nice. Feels flat.'}</span>}
         controls={
           <Segment
             boxed

@@ -455,7 +455,7 @@ p { margin: 0; }
 .at-note { font-size: 13px; line-height: 1.5; color: var(--muted); min-height: 4.5em; }
 .at-result { display: flex; justify-content: space-between; align-items: baseline; border-top: 1px solid var(--line); padding-top: 12px; font-size: 12px; color: var(--muted); }
 .at-result b { font-family: var(--serif); font-weight: 400; font-size: 26px; color: var(--fg); }
-.panel--attention .segment { flex-direction: column; align-items: flex-start; gap: 0; }
+
 
 /* 05 rhythm */
 .rh-modes { position: absolute; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
@@ -657,4 +657,27 @@ p { margin: 0; }
 @media (max-width: 900px) {
   .mon { width: 100%; }
   .mon-controls .segment--boxed button { padding: 8px 10px; }
+}
+
+/* ───────────── v6: the client's brand ───────────── */
+.hero--pitch { display: grid; grid-template-columns: minmax(300px, 38%) minmax(0, 1fr); grid-template-rows: 1fr; align-items: center; column-gap: clamp(24px, 4vw, 64px); padding-top: 92px; padding-bottom: 32px; }
+.hp-copy { display: flex; flex-direction: column; gap: 26px; }
+.hp-h { margin: 0; font-family: var(--serif); font-weight: 400; font-size: clamp(42px, 5vw, 86px); line-height: 0.96; letter-spacing: -0.015em; }
+.hp-h em { color: var(--orange); }
+.hp-pick { display: flex; flex-direction: column; gap: 10px; }
+.hp-pick > p { font-family: var(--mono); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 600; }
+.hp-stage { position: relative; min-height: 420px; height: 100%; }
+.hero--pitch .hk-start { position: static; align-self: flex-start; }
+.bp { display: flex; flex-wrap: wrap; gap: 8px; }
+.bp button { padding: 10px 16px; border-radius: 99px; border: 1px solid var(--line); font-size: 14px; color: var(--fg); background: rgba(255, 255, 255, 0.4); transition: background-color 0.3s, color 0.3s, border-color 0.3s, transform 0.3s var(--ease-back); }
+.bp button:hover { border-color: var(--fg); }
+.bp button.is-on { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.bp button:active { transform: scale(0.95); }
+.bp-compact { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; }
+.bp-compact select { font: inherit; letter-spacing: 0.06em; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 99px; padding: 5px 10px; cursor: pointer; }
+.bp-compact select option { color: #161513; }
+@media (max-width: 900px) {
+  .hero--pitch { grid-template-columns: 1fr; row-gap: 20px; padding-top: 80px; }
+  .hp-stage { min-height: 0; }
+  .bp-compact span { display: none; }
 }

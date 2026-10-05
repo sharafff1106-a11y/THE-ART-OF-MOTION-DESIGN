@@ -5,7 +5,8 @@ import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
 import { TIMING } from '../motion/easing';
 import { useArmedSound, useCanvasLoop } from '../motion/hooks';
-import { drawBackdrop, drawHeadphones, serif } from '../motion/kora';
+import { brandStore, useBrand } from '../brand/brands';
+import { drawBackdrop, serif } from '../motion/kora';
 import { clamp, crossed, lerp } from '../motion/math';
 
 /**
@@ -17,17 +18,19 @@ const MOVE = 1.0;
 const HOLD = 1.3;
 const CYCLE = WAIT + MOVE + HOLD;
 const WORDS: Record<string, string> = {
-  linear: 'Robotic.',
-  eased: 'Smooth. Premium.',
-  anticipation: 'Expressive.',
-  overshoot: 'Energetic.',
-  settle: 'Physical. Real.',
+  linear: 'Feels cheap.',
+  eased: 'Feels premium.',
+  anticipation: 'Feels confident.',
+  overshoot: 'Feels playful.',
+  settle: 'Feels real.',
 };
+const LABELS: Record<string, string> = { linear: 'Cheap', eased: 'Premium', anticipation: 'Confident', overshoot: 'Playful', settle: 'Real' };
 
 export function Timing() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { armed, arm } = useArmedSound(wrapRef);
+  const brand = useBrand();
   const [mode, setMode] = useState('linear');
   const modeRef = useRef('linear');
   const st = useRef({ t0: performance.now() / 1000, prev: 0, prevPos: 0 });
@@ -35,11 +38,12 @@ export function Timing() {
   useCanvasLoop(canvasRef, (ctx, w, h) => {
     const s = st.current;
     const preset = TIMING.find((p) => p.id === modeRef.current)!;
+    const B = brandStore.get();
     const t = (performance.now() / 1000 - s.t0) % CYCLE;
     const u = clamp((t - WAIT) / MOVE);
     const p = preset.ease(u);
 
-    drawBackdrop(ctx, w, h, '#1b1917', '#0c0b0a', 'rgba(255,110,50,0.16)');
+    drawBackdrop(ctx, w, h, B.dark[0], B.dark[1], 'rgba(255,235,210,0.12)');
     // floor line
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     ctx.fillRect(0, h * 0.78, w, 1);
@@ -53,10 +57,10 @@ export function Timing() {
       const gu = clamp((t - k * 0.05 - WAIT) / MOVE);
       const gx = lerp(x0, x1, preset.ease(gu));
       ctx.globalAlpha = 0.07 * (6 - k);
-      drawHeadphones(ctx, gx, y, size, '#efe9df', '#ff5a1f');
+      B.draw(ctx, gx, y, size);
     }
     ctx.globalAlpha = Math.min(1, t / 0.25);
-    drawHeadphones(ctx, lerp(x0, x1, p), y, size, '#efe9df', '#ff5a1f');
+    B.draw(ctx, lerp(x0, x1, p), y, size);
     // the name follows the product with the same timing
     const wu = clamp((t - WAIT - 0.18) / MOVE);
     const wp = preset.ease(wu);
@@ -64,7 +68,7 @@ export function Timing() {
     ctx.fillStyle = '#efe9df';
     ctx.textAlign = 'center';
     ctx.font = serif(h * 0.11);
-    ctx.fillText('KORA', w * 0.5, h * 0.2 + (1 - wp) * h * 0.06);
+    ctx.fillText(B.name, w * 0.5, h * 0.17 + (1 - wp) * h * 0.06);
     ctx.globalAlpha = 1;
 
     // speed graph, bottom right
@@ -74,7 +78,7 @@ export function Timing() {
     const gy = h - gh - 18;
     ctx.strokeStyle = 'rgba(255,255,255,0.18)';
     ctx.strokeRect(gx, gy, gw, gh);
-    ctx.strokeStyle = '#ff6a2c';
+    ctx.strokeStyle = B.accent;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i <= 40; i++) {
@@ -99,15 +103,15 @@ export function Timing() {
   });
 
   return (
-    <Panel id="timing" num="03" title="Timing" theme="dark" headline={['Same move.', 'Different feel.']} body={<p>Switch the timing. Watch the product change character.</p>}>
+    <Panel id="timing" num="03" title="Timing" theme="dark" headline={['Premium', 'or cheap?']} body={<p>The same reveal. Only the timing changes.</p>}>
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
-        caption={<span className="mon-word" key={mode}>{WORDS[mode]}</span>}
+        caption={<span className="mon-word" key={mode + brand.id}>{WORDS[mode]}</span>}
         controls={
           <Segment
             boxed
-            options={TIMING.map((t) => ({ id: t.id, label: t.label }))}
+            options={TIMING.map((t) => ({ id: t.id, label: LABELS[t.id] }))}
             value={mode}
             onChange={(m) => {
               void arm();

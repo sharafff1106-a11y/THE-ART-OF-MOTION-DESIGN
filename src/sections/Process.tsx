@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useCanvasLoop, useInView } from '../motion/hooks';
-import { drawHeadphones, drawSub, serif } from '../motion/kora';
+import { drawSub, serif } from '../motion/kora';
 
 /**
  * 11 — PROCESS
@@ -41,12 +42,13 @@ function finalFrame(ctx: CanvasRenderingContext2D, x: number, y: number, w: numb
     }
   }
   const fy = moving ? Math.sin(time * 1.6) * h * 0.02 : 0;
-  drawHeadphones(ctx, cx, cy + fy, Math.min(w, h) * 0.34);
+  const B = brandStore.get();
+  B.draw(ctx, cx, cy + fy, Math.min(w, h) * 0.4, time);
   ctx.fillStyle = '#efe9df';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = serif(Math.min(w, h) * 0.12);
-  ctx.fillText('KORA', cx, y + h * 0.17);
+  ctx.fillText(B.name, cx, y + h * 0.13);
   ctx.restore();
 }
 
@@ -93,28 +95,30 @@ export function Process() {
       ctx.fillStyle = '#3a2f1c';
       ctx.textAlign = 'left';
       ctx.font = serif(h * 0.07, true);
-      ['Launch KORA.', 'Feel: calm, premium.', 'For: city commuters.'].forEach((l, i) => ctx.fillText(l, -h * 0.34, -h * 0.13 + i * h * 0.12));
+      [`Launch ${brandStore.get().name}.`, 'Feel: premium, memorable.', `For: ${brandStore.get().label.toLowerCase()} buyers.`].forEach((l, i) => ctx.fillText(l, -h * 0.34, -h * 0.13 + i * h * 0.12));
       ctx.restore();
     } else if (sId === 'sketch') {
-      // pencil: the same composition drawn roughly, a few wobbly passes
-      ctx.strokeStyle = 'rgba(40,36,32,0.55)';
-      ctx.lineWidth = 1.4;
+      // pencil: the same composition, rough and unfinished
       const cx = w / 2;
-      const cy = h * 0.48;
-      const s = h * 0.34;
-      for (let pass = 0; pass < 3; pass++) {
-        const j = (k: number) => Math.sin(k * 12.9898 + pass * 78.233) * 3;
+      const cy = h * 0.5;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.filter = 'grayscale(1) contrast(0.5) brightness(1.3)';
+      brandStore.get().draw(ctx, cx, cy, h * 0.4);
+      ctx.restore();
+      ctx.strokeStyle = 'rgba(40,36,32,0.5)';
+      ctx.lineWidth = 1.2;
+      for (let pass = 0; pass < 2; pass++) {
+        const j = (k: number) => Math.sin(k * 12.9898 + pass * 78.233) * 4;
+        ctx.strokeRect(cx - h * 0.26 + j(1), cy - h * 0.22 + j(2), h * 0.52 + j(3), h * 0.44 + j(4));
         ctx.beginPath();
-        ctx.arc(cx + j(1), cy + j(2), s * 0.5 + j(3), Math.PI, 0);
+        ctx.ellipse(cx + j(5), cy + h * 0.22 + j(6), h * 0.2, h * 0.025, 0, 0, Math.PI * 2);
         ctx.stroke();
-        for (const side of [-1, 1]) {
-          ctx.strokeRect(cx + side * s * 0.5 - s * 0.135 + j(side + 4), cy - s * 0.11 + j(side + 6), s * 0.27, s * 0.44);
-        }
       }
       ctx.font = serif(h * 0.12);
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(40,36,32,0.5)';
-      ctx.fillText('KORA?', cx, h * 0.18);
+      ctx.fillText(brandStore.get().name + '?', cx, h * 0.18);
       ctx.setLineDash([4, 6]);
       ctx.strokeStyle = 'rgba(40,36,32,0.18)';
       [1, 2].forEach((k) => {

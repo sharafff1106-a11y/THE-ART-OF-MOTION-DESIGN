@@ -2,8 +2,9 @@ import { useRef, useState } from 'react';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useCanvasLoop } from '../motion/hooks';
-import { drawHeadphones, serif } from '../motion/kora';
+import { serif } from '../motion/kora';
 import { rand } from '../motion/math';
 import { EMOTIONS, EmotionId } from './emotions';
 
@@ -136,7 +137,7 @@ export function Emotion() {
     ctx.beginPath();
     ctx.ellipse(0, h * 0.27 - (y - cy), h * 0.18, h * 0.02, 0, 0, Math.PI * 2);
     ctx.fill();
-    drawHeadphones(ctx, 0, 0, h * 0.36, L.band, L.cup);
+    brandStore.get().draw(ctx, 0, 0, h * 0.42, time);
     ctx.restore();
 
     // the line, set in the voice of the feeling

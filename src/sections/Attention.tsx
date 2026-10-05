@@ -1,141 +1,194 @@
-import { CSSProperties, useCallback, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
-import { PillButton } from '../components/Controls';
+import { brandStore, useBrand } from '../brand/brands';
+import { Monitor } from '../components/Monitor';
+import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { useArmedSound, useCanvasLoop, useInView } from '../motion/hooks';
+import { clamp, damp, lerp } from '../motion/math';
 
 /**
- * 02 — ATTENTION
- * A test with the visitor's own eyes: find one word among many, three times.
- * Every tile looks identical; only the motion changes between rounds.
+ * 02 — STOP THE SCROLL
+ * A social feed. Every post is still — except, if you let it, yours.
+ * The feed slows and stops on the one thing that moves.
  */
-type RoundMode = 'still' | 'one' | 'all';
-const ROUNDS: { mode: RoundMode; label: string; note: string }[] = [
-  { mode: 'still', label: 'No motion', note: 'Everything is still.' },
-  { mode: 'one', label: 'One thing moves', note: 'One tile moves gently.' },
-  { mode: 'all', label: 'Everything moves', note: 'Every tile moves.' },
+type Mode = 'static' | 'moving';
+const GREYS = [
+  ['#d9d4cc', '#c4bdb2'],
+  ['#cfd6dc', '#b6c0c9'],
+  ['#e0d8cf', '#cbbfb2'],
+  ['#d5d9cf', '#bfc5b7'],
+  ['#ddd3d6', '#c8bbbf'],
 ];
-const POOL = ['ORBIT', 'PULSE', 'NOVA', 'ECHO', 'WAVE', 'AURA', 'FLUX', 'LUMA', 'SONO', 'VIBE', 'TONE', 'HALO', 'DRIFT', 'BEAM', 'CORE', 'MIRA', 'ONYX', 'RIFT', 'SOLA', 'TERA', 'ZENO', 'KIRA', 'KOBE', 'ORA'];
-const TARGET = 'KORA';
-const COUNT = 40;
-
-function makeBoard() {
-  const words = Array.from({ length: COUNT }, () => POOL[Math.floor(Math.random() * POOL.length)]);
-  const target = Math.floor(Math.random() * COUNT);
-  words[target] = TARGET;
-  return { words, target, delays: words.map(() => Math.random()) };
-}
+const EVERY = 5;
 
 export function Attention() {
-  const [phase, setPhase] = useState<'intro' | 'play' | 'found' | 'results'>('intro');
-  const [round, setRound] = useState(0);
-  const [board, setBoard] = useState(makeBoard);
-  const [times, setTimes] = useState<number[]>([]);
-  const [miss, setMiss] = useState(-1);
-  const start = useRef(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const brand = useBrand();
+  const visible = useInView(wrapRef, { threshold: 0.4 });
+  const { armed, arm } = useArmedSound(wrapRef);
+  const [mode, setMode] = useState<Mode>('static');
+  const modeRef = useRef<Mode>('static');
+  const auto = useRef(true);
+  const st = useRef({ y: 0, v: 1, hold: 0, stopped: false, heart: -9 });
 
-  const begin = useCallback((r: number) => {
-    setBoard(makeBoard());
-    setRound(r);
-    setPhase('play');
-    start.current = performance.now();
-  }, []);
+  // demonstrates itself: static, then moving, until the visitor chooses
+  useEffect(() => {
+    if (!visible) return;
+    const id = window.setInterval(() => {
+      if (!auto.current) return;
+      const next = modeRef.current === 'static' ? 'moving' : 'static';
+      modeRef.current = next;
+      setMode(next);
+    }, 7000);
+    return () => window.clearInterval(id);
+  }, [visible]);
 
-  const pick = (i: number) => {
-    if (phase !== 'play') return;
-    if (i !== board.target) {
-      setMiss(i);
-      audio.click(500, 0.08);
-      window.setTimeout(() => setMiss(-1), 400);
-      return;
+  useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
+    const s = st.current;
+    const B = brandStore.get();
+    const moving = modeRef.current === 'moving';
+
+    ctx.fillStyle = '#e9e5df';
+    ctx.fillRect(0, 0, w, h);
+    // phone
+    const ph = h * 0.92;
+    const pw = ph * 0.5;
+    const px = w / 2 - pw / 2;
+    const py = (h - ph) / 2;
+    ctx.fillStyle = '#121212';
+    ctx.beginPath();
+    ctx.roundRect(px - 8, py - 8, pw + 16, ph + 16, 30);
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(px, py, pw, ph, 24);
+    ctx.clip();
+    ctx.fillStyle = '#fafafa';
+    ctx.fillRect(px, py, pw, ph);
+
+    const cardH = pw * 1.18;
+    const speed = ph * 0.32;
+    // where is our post relative to the screen centre?
+    const period = cardH * EVERY;
+    const ours = (k: number) => k * period + cardH * 2;
+    const nearest = Math.round((s.y + ph / 2 - cardH * 2 - cardH / 2) / period);
+    const ourTop = py + ours(nearest) - s.y;
+    const centred = Math.abs(ourTop + cardH / 2 - (py + ph / 2)) < cardH * 0.18;
+
+    if (moving && centred && !s.stopped) {
+      s.stopped = true;
+      s.hold = 1.8;
+      s.heart = time;
+      if (armed.current) audio.click(2600, 0.12);
     }
-    const t = (performance.now() - start.current) / 1000;
-    const next = [...times.slice(0, round), t];
-    setTimes(next);
-    setPhase('found');
-    audio.click(2600, 0.14);
-    window.setTimeout(() => {
-      if (round < ROUNDS.length - 1) begin(round + 1);
-      else setPhase('results');
-    }, 900);
-  };
+    if (!centred) s.stopped = false;
+    if (s.hold > 0) s.hold -= dt;
+    s.v = damp(s.v, s.hold > 0 ? 0 : 1, s.hold > 0 ? 7 : 3, dt);
+    s.y += speed * s.v * dt;
 
-  const mode = ROUNDS[round].mode;
-  const max = Math.max(...times, 1);
-  const verdict =
-    times.length === 3
-      ? times[1] < times[0] && times[1] < times[2]
-        ? `With one moving tile you found it ${(times[0] - times[1]).toFixed(1)} s faster than with no motion. Your eye went where the motion told it to.`
-        : 'Your times are close this round. Try again, and notice what your eye does first when something moves.'
-      : '';
+    const first = Math.floor(s.y / cardH) - 1;
+    for (let i = first; i < first + Math.ceil(ph / cardH) + 3; i++) {
+      const top = py + i * cardH - s.y;
+      const isOurs = ((i - 2) % EVERY + EVERY) % EVERY === 0;
+      const pad = pw * 0.05;
+      // header
+      ctx.fillStyle = isOurs ? B.accent : '#d6d2cc';
+      ctx.beginPath();
+      ctx.arc(px + pad + 10, top + 18, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = isOurs ? '#1a1a1a' : '#cfcac3';
+      if (isOurs) {
+        ctx.font = `600 ${Math.max(9, pw * 0.045)}px Inter, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(B.name.toLowerCase(), px + pad + 26, top + 18);
+      } else ctx.fillRect(px + pad + 26, top + 14, pw * 0.3, 8);
+      // image
+      const iy = top + 36;
+      const ih = cardH - 74;
+      if (isOurs) {
+        const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
+        g.addColorStop(0, B.dark[0]);
+        g.addColorStop(1, B.dark[1]);
+        ctx.fillStyle = g;
+        ctx.fillRect(px, iy, pw, ih);
+        const bob = moving ? Math.sin(time * 2) * ih * 0.03 : 0;
+        const sc = moving ? 1 + Math.sin(time * 2) * 0.03 : 1;
+        ctx.save();
+        ctx.translate(px + pw / 2, iy + ih * 0.52 + bob);
+        ctx.scale(sc, sc);
+        B.draw(ctx, 0, 0, ih * 0.5, time);
+        ctx.restore();
+        if (moving) {
+          // a light sweep across the post
+          const sx = px + ((time * 0.6) % 1.6) * pw * 1.4 - pw * 0.4;
+          const sg = ctx.createLinearGradient(sx - 40, 0, sx + 40, 0);
+          sg.addColorStop(0, 'rgba(255,255,255,0)');
+          sg.addColorStop(0.5, 'rgba(255,255,255,0.18)');
+          sg.addColorStop(1, 'rgba(255,255,255,0)');
+          ctx.fillStyle = sg;
+          ctx.fillRect(px, iy, pw, ih);
+        }
+        ctx.fillStyle = '#f3ece2';
+        ctx.textAlign = 'center';
+        ctx.font = `${ih * 0.1}px "Instrument Serif", Georgia, serif`;
+        ctx.fillText(B.name, px + pw / 2, iy + ih * 0.13);
+      } else {
+        const [a, b] = GREYS[((i % GREYS.length) + GREYS.length) % GREYS.length];
+        const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
+        g.addColorStop(0, a);
+        g.addColorStop(1, b);
+        ctx.fillStyle = g;
+        ctx.fillRect(px, iy, pw, ih);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath();
+        ctx.arc(px + pw * (0.3 + (i % 3) * 0.2), iy + ih * 0.55, ih * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // actions
+      ctx.fillStyle = '#d6d2cc';
+      [0, 1, 2].forEach((k) => ctx.fillRect(px + pad + k * 26, top + cardH - 28, 16, 12));
+    }
+    // a like, when the thumb stops
+    const age = time - s.heart;
+    if (age > 0 && age < 1.2) {
+      const k = clamp(age / 0.3);
+      ctx.globalAlpha = 1 - clamp((age - 0.8) / 0.4);
+      ctx.fillStyle = '#ff3b5c';
+      ctx.font = `${lerp(10, pw * 0.22, k)}px Inter, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillText('♥', px + pw / 2, py + ph / 2);
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  });
 
   return (
-    <Panel
-      id="attention"
-      num="02"
-      title="Attention"
-      theme="paper"
-      headline={['Where do', 'eyes go?']}
-      body={<p>Find KORA. Three quick rounds.</p>}
-    >
-      <div className="ag-wrap">
-        <div className="ag-head">
-          {ROUNDS.map((r, i) => (
-            <span key={r.mode} className={`${phase !== 'intro' && i === round && phase !== 'results' ? 'is-on' : ''} ${times[i] !== undefined ? 'is-done' : ''}`}>
-              <b>Round {i + 1}</b> {r.label}
-              {times[i] !== undefined && <em>{times[i].toFixed(1)} s</em>}
-            </span>
-          ))}
-        </div>
-        <div className={`ag-board is-${mode} ${phase === 'play' || phase === 'found' ? 'is-live' : ''}`}>
-          {board.words.map((w, i) => (
-            <button
-              key={i}
-              className={`ag-tile ${i === board.target ? 'is-target' : ''} ${phase === 'found' && i === board.target ? 'is-found' : ''} ${miss === i ? 'is-miss' : ''}`}
-              style={{ '--k': board.delays[i] } as CSSProperties}
-              onClick={() => pick(i)}
-              tabIndex={phase === 'play' ? 0 : -1}
-            >
-              {w}
-            </button>
-          ))}
-
-          {phase === 'intro' && (
-            <div className="ag-overlay">
-              <p className="ag-big">
-                Find <b>KORA</b>
-              </p>
-              <p>Three short rounds. Click the word as fast as you can.</p>
-              <PillButton icon="play" onClick={() => begin(0)}>
-                Start the test
-              </PillButton>
-            </div>
-          )}
-          {phase === 'results' && (
-            <div className="ag-overlay ag-results">
-              <p className="ag-big">Your results</p>
-              <div className="ag-bars">
-                {ROUNDS.map((r, i) => (
-                  <div key={r.mode} className={`ag-bar ag-bar--${r.mode}`}>
-                    <span>{r.label}</span>
-                    <i style={{ width: `${(times[i] / max) * 100}%` }} />
-                    <b>{times[i]?.toFixed(1)} s</b>
-                  </div>
-                ))}
-              </div>
-              <p>{verdict}</p>
-              <PillButton
-                onClick={() => {
-                  setTimes([]);
-                  begin(0);
-                }}
-              >
-                Try again
-              </PillButton>
-            </div>
-          )}
-        </div>
-        <p className="ag-foot">{phase === 'play' ? `${ROUNDS[round].note} Find KORA.` : phase === 'found' ? 'Found it.' : ' '}</p>
-      </div>
+    <Panel id="attention" num="02" title="Attention" theme="paper" headline={['Stop', 'the scroll.']} body={<p>Same feed. Same post. One small movement.</p>}>
+      <Monitor
+        canvasRef={canvasRef}
+        wrapRef={wrapRef}
+        tone="light"
+        caption={<span className="mon-word" key={mode + brand.id}>{mode === 'moving' ? 'The thumb stops.' : 'Scrolled past.'}</span>}
+        controls={
+          <Segment
+            boxed
+            options={[
+              { id: 'static', label: 'Static post' },
+              { id: 'moving', label: 'Moving post' },
+            ]}
+            value={mode}
+            onChange={(v) => {
+              auto.current = false;
+              void arm();
+              setMode(v);
+              modeRef.current = v;
+            }}
+          />
+        }
+      />
     </Panel>
   );
 }

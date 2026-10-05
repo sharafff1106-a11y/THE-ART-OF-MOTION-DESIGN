@@ -3,8 +3,8 @@ import gsap from 'gsap';
 import { audio } from '../audio/engine';
 import { PillButton, Slider } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useCanvasLoop } from '../motion/hooks';
-import { drawHeadphones } from '../motion/kora';
 import { damp, lerp, rand, smoothstep } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
@@ -40,6 +40,7 @@ export function Contrast() {
     const s = sim.current;
     s.c = damp(s.c, target.current, 6, dt);
     const chaos = 1 - s.c;
+    const B = brandStore.get();
     const calm = smoothstep(0.55, 1, s.c);
     ctx.clearRect(0, 0, w, h);
 
@@ -79,7 +80,7 @@ export function Contrast() {
     ctx.save();
     ctx.translate(px, py);
     ctx.rotate(Math.sin(time * 7) * 0.25 * chaos);
-    drawHeadphones(ctx, 0, 0, h * lerp(0.26, 0.34, calm));
+    B.draw(ctx, 0, 0, h * lerp(0.3, 0.38, calm), time);
     ctx.restore();
 
     // the name
@@ -94,17 +95,17 @@ export function Contrast() {
         ctx.rotate(Math.sin(time * 5 + k) * 0.2 * chaos);
         ctx.fillStyle = COLORS[(k + Math.floor(time * 6)) % COLORS.length];
         ctx.font = `900 ${h * 0.12}px Inter, sans-serif`;
-        ctx.fillText('KORA!!!', 0, 0);
+        ctx.fillText(B.name + '!!!', 0, 0);
         ctx.restore();
       }
     }
     ctx.globalAlpha = calm;
     ctx.fillStyle = '#efe9df';
     ctx.font = `${h * 0.11}px "Instrument Serif", Georgia, serif`;
-    ctx.fillText('KORA', w / 2, nameY);
+    ctx.fillText(B.name, w / 2, nameY);
     ctx.font = `600 ${Math.max(8, h * 0.028)}px "IBM Plex Mono", monospace`;
     ctx.fillStyle = '#b8b2a8';
-    ctx.fillText('HEAR EVERYTHING.', w / 2, nameY + h * 0.08);
+    ctx.fillText(B.tagline.toUpperCase(), w / 2, nameY + h * 0.08);
     // one clear call to action
     const bw = h * 0.26;
     const bh = h * 0.075;
@@ -113,7 +114,7 @@ export function Contrast() {
     ctx.roundRect(w / 2 - bw / 2, h * 0.86 - bh / 2, bw, bh, bh / 2);
     ctx.fill();
     ctx.fillStyle = '#fff';
-    ctx.fillText('PRE-ORDER', w / 2, h * 0.86 + 1);
+    ctx.fillText('SHOP NOW', w / 2, h * 0.86 + 1);
     ctx.globalAlpha = 1;
 
     // stickers shouting over everything

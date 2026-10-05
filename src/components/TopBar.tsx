@@ -1,6 +1,7 @@
 import { audio } from '../audio/engine';
 import { useSoundEnabled } from '../motion/hooks';
 import { scrollToId } from '../motion/scroll';
+import { BrandPicker } from '../brand/BrandPicker';
 
 export const CHAPTER_IDS = [
   'understanding',
@@ -41,6 +42,7 @@ export function TopBar({ current, dark }: { current: number; dark: boolean }) {
         ))}
       </nav>
       <div className="topbar-right">
+        <BrandPicker compact />
         <div className="dots" aria-label="Chapters">
           {CHAPTER_IDS.map((id, i) => (
             <button

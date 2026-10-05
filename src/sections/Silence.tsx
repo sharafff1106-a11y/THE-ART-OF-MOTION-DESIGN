@@ -3,8 +3,9 @@ import { audio } from '../audio/engine';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
 import { Panel } from '../components/Panel';
+import { brandStore } from '../brand/brands';
 import { useArmedSound, useCanvasLoop } from '../motion/hooks';
-import { drawHeadphones, drawSub, serif } from '../motion/kora';
+import { drawSub, serif } from '../motion/kora';
 import { clamp, crossed, easeOut, lerp } from '../motion/math';
 import { drawSphere } from '../motion/sprites';
 
@@ -68,7 +69,7 @@ export function Silence() {
       ctx.save();
       ctx.translate(cx, cy);
       ctx.scale(1 + kick * 0.05, 1 + kick * 0.05);
-      drawHeadphones(ctx, 0, 0, h * 0.3);
+      brandStore.get().draw(ctx, 0, 0, h * 0.34);
       ctx.restore();
       drawSub(ctx, w, h, '[ music builds ]');
     } else if (t < reveal) {
@@ -90,7 +91,7 @@ export function Silence() {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = serif(h * 0.22 * lerp(1.14, 1, k));
-      ctx.fillText('KORA', cx, cy);
+      ctx.fillText(brandStore.get().name, cx, cy);
       if (e < 0.8) drawSub(ctx, w, h, '[ IMPACT ]', e < 0.6 ? 1 : 1 - (e - 0.6) / 0.2);
     }
 
