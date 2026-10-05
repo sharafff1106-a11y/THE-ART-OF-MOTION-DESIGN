@@ -20,7 +20,7 @@ const GREYS = [
   ['#d5d9cf', '#bfc5b7'],
   ['#ddd3d6', '#c8bbbf'],
 ];
-const EVERY = 5;
+const EVERY = 4;
 
 export function Attention() {
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -31,7 +31,7 @@ export function Attention() {
   const [mode, setMode] = useState<Mode>('static');
   const modeRef = useRef<Mode>('static');
   const auto = useRef(true);
-  const st = useRef({ y: 0, v: 1, hold: 0, stopped: false, heart: -9 });
+  const st = useRef({ y: 0, v: 1, hold: 0, stopped: false, heart: -9, cue: true, ph: 0 });
 
   // demonstrates itself: static, then moving, until the visitor chooses
   useEffect(() => {
@@ -40,8 +40,9 @@ export function Attention() {
       if (!auto.current) return;
       const next = modeRef.current === 'static' ? 'moving' : 'static';
       modeRef.current = next;
+      st.current.cue = true;
       setMode(next);
-    }, 7000);
+    }, 5200);
     return () => window.clearInterval(id);
   }, [visible]);
 
@@ -53,26 +54,35 @@ export function Attention() {
     ctx.fillStyle = '#e9e5df';
     ctx.fillRect(0, 0, w, h);
     // phone
-    const ph = h * 0.92;
+    const ph = h * 0.9;
     const pw = ph * 0.5;
     const px = w / 2 - pw / 2;
     const py = (h - ph) / 2;
     ctx.fillStyle = '#121212';
     ctx.beginPath();
-    ctx.roundRect(px - 8, py - 8, pw + 16, ph + 16, 30);
+    ctx.roundRect(px - ph * 0.02, py - ph * 0.02, pw + ph * 0.04, ph + ph * 0.04, ph * 0.075);
     ctx.fill();
     ctx.save();
     ctx.beginPath();
-    ctx.roundRect(px, py, pw, ph, 24);
+    ctx.roundRect(px, py, pw, ph, ph * 0.06);
     ctx.clip();
     ctx.fillStyle = '#fafafa';
     ctx.fillRect(px, py, pw, ph);
 
     const cardH = pw * 1.18;
-    const speed = ph * 0.32;
+    const speed = ph * 0.42;
     // where is our post relative to the screen centre?
     const period = cardH * EVERY;
     const ours = (k: number) => k * period + cardH * 2;
+    if (s.cue) {
+      // every choice replays at once: the brand post enters from just below
+      s.cue = false;
+      const k = Math.ceil((s.y + ph * 1.1) / period);
+      s.y = ours(k) + cardH / 2 - ph / 2 - ph * 0.55;
+      s.hold = 0;
+      s.v = 1;
+      s.stopped = false;
+    }
     const nearest = Math.round((s.y + ph / 2 - cardH * 2 - cardH / 2) / period);
     const ourTop = py + ours(nearest) - s.y;
     const centred = Math.abs(ourTop + cardH / 2 - (py + ph / 2)) < cardH * 0.18;
@@ -93,21 +103,22 @@ export function Attention() {
       const top = py + i * cardH - s.y;
       const isOurs = ((i - 2) % EVERY + EVERY) % EVERY === 0;
       const pad = pw * 0.05;
+      const u = pw / 170; // header and icons scale with the phone
       // header
       ctx.fillStyle = isOurs ? B.accent : '#d6d2cc';
       ctx.beginPath();
-      ctx.arc(px + pad + 10, top + 18, 10, 0, Math.PI * 2);
+      ctx.arc(px + pad + 10 * u, top + 18 * u, 10 * u, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = isOurs ? '#1a1a1a' : '#cfcac3';
       if (isOurs) {
-        ctx.font = `600 ${Math.max(9, pw * 0.045)}px Inter, sans-serif`;
+        ctx.font = `600 ${Math.max(8, pw * 0.065)}px Inter, sans-serif`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillText(B.name.toLowerCase(), px + pad + 26, top + 18);
-      } else ctx.fillRect(px + pad + 26, top + 14, pw * 0.3, 8);
+        ctx.fillText(B.name.toLowerCase(), px + pad + 26 * u, top + 18 * u);
+      } else ctx.fillRect(px + pad + 26 * u, top + 14 * u, pw * 0.3, 8 * u);
       // image
-      const iy = top + 36;
-      const ih = cardH - 74;
+      const iy = top + 36 * u;
+      const ih = cardH - 74 * u;
       if (isOurs) {
         const g = ctx.createLinearGradient(0, iy, 0, iy + ih);
         g.addColorStop(0, B.dark[0]);
@@ -149,7 +160,7 @@ export function Attention() {
       }
       // actions
       ctx.fillStyle = '#d6d2cc';
-      [0, 1, 2].forEach((k) => ctx.fillRect(px + pad + k * 26, top + cardH - 28, 16, 12));
+      [0, 1, 2].forEach((k) => ctx.fillRect(px + pad + k * 26 * u, top + cardH - 28 * u, 16 * u, 12 * u));
     }
     // a like, when the thumb stops
     const age = time - s.heart;
@@ -185,6 +196,7 @@ export function Attention() {
               void arm();
               setMode(v);
               modeRef.current = v;
+              st.current.cue = true;
             }}
           />
         }

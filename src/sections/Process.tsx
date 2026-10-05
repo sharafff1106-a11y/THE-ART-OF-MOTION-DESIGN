@@ -61,11 +61,15 @@ export function Process() {
   const auto = useRef(true);
   stepRef.current = step;
 
-  // walks itself through the steps until the visitor takes over
+  // walks itself through the steps once, until the visitor takes over
   useEffect(() => {
-    if (!visible) return;
+    if (!visible || !auto.current) return;
     const id = window.setInterval(() => {
-      if (auto.current) setStep((s) => (s + 1) % STEPS.length);
+      if (!auto.current) return;
+      setStep((s) => {
+        if (s + 1 >= STEPS.length - 1) auto.current = false;
+        return Math.min(s + 1, STEPS.length - 1);
+      });
     }, 2400);
     return () => window.clearInterval(id);
   }, [visible]);

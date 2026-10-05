@@ -14,7 +14,7 @@ import { scrollToId } from '../motion/scroll';
  * revealed three ways: static, with motion, with motion and sound.
  */
 type Mode = 'static' | 'motion' | 'sound';
-const CYCLE = 5.6;
+const END = 3.4;
 const RISE = 0.3;
 const LAND = 1.3;
 const NAME = 1.6;
@@ -31,19 +31,28 @@ export function Hero() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shown = useInView(ref, { threshold: 0.1, once: true });
   const brand = useBrand();
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const [mode, setMode] = useState<Mode>('motion');
   const modeRef = useRef<Mode>('motion');
   const st = useRef({ t0: performance.now() / 1000, prev: 0 });
 
+
+  // plays once when it comes into view, then rests on the last frame
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+  };
+  useEffect(() => {
+    if (visible) replay();
+  }, [visible]);
   // restart the reveal whenever the product changes
-  useEffect(() => brandStore.subscribe(() => (st.current.t0 = performance.now() / 1000)), []);
+  useEffect(() => brandStore.subscribe(replay), []);
 
   useCanvasLoop(canvasRef, (ctx, w, h, _dt, time) => {
     const s = st.current;
     const B = brandStore.get();
     const m = modeRef.current;
-    const t = m === 'static' ? CYCLE - 1 : (performance.now() / 1000 - s.t0) % CYCLE;
+    const t = m === 'static' ? END : Math.min(performance.now() / 1000 - s.t0, END);
     if (m === 'sound' && armed.current) {
       if (crossed(s.prev, t, RISE)) audio.whoosh(LAND - RISE, 0.12);
       if (crossed(s.prev, t, LAND)) B.place(0.8, 0.6);
@@ -137,6 +146,7 @@ export function Hero() {
         <Monitor
           canvasRef={canvasRef}
           wrapRef={wrapRef}
+          onReplay={mode === 'static' ? undefined : replay}
           caption={<span className="mon-word" key={mode + brand.id}>{CAPTION[mode]}</span>}
           controls={
             <Segment
@@ -151,7 +161,7 @@ export function Hero() {
                 if (v === 'sound') void arm();
                 setMode(v);
                 modeRef.current = v;
-                st.current.t0 = performance.now() / 1000;
+                replay();
               }}
             />
           }

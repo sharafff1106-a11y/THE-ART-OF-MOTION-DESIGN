@@ -11,6 +11,7 @@ export function Monitor({
   controls,
   overlay,
   tone = 'dark',
+  onReplay,
 }: {
   canvasRef: RefObject<HTMLCanvasElement>;
   wrapRef?: RefObject<HTMLDivElement>;
@@ -18,12 +19,19 @@ export function Monitor({
   controls?: ReactNode;
   overlay?: ReactNode;
   tone?: 'dark' | 'light';
+  /** shows a small replay button on the screen */
+  onReplay?: () => void;
 }) {
   return (
     <div className="mon-stage" ref={wrapRef}>
       <div className={`mon mon--${tone}`}>
         <canvas ref={canvasRef} />
         {overlay}
+        {onReplay && (
+          <button className="mon-replay" onClick={onReplay} aria-label="Replay">
+            ↻ <span>Replay</span>
+          </button>
+        )}
       </div>
       {caption !== undefined && <div className="mon-cap">{caption}</div>}
       {controls && <div className="mon-controls">{controls}</div>}

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
@@ -22,17 +22,26 @@ type Mode = 'none' | 'pause';
 export function Silence() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const [mode, setMode] = useState<Mode>('pause');
   const modeRef = useRef<Mode>('pause');
   const st = useRef({ t0: performance.now() / 1000, prev: 0 });
+
+
+  // plays once when it comes into view, then rests on the last frame
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+  };
+  useEffect(() => {
+    if (visible) replay();
+  }, [visible]);
 
   useCanvasLoop(canvasRef, (ctx, w, h) => {
     const s = st.current;
     const pause = modeRef.current === 'pause' ? 1 : 0;
     const reveal = MUSIC + pause;
-    const cycle = reveal + TAIL + 0.4;
-    const t = (performance.now() / 1000 - s.t0) % cycle;
+    const t = Math.min(performance.now() / 1000 - s.t0, reveal + TAIL);
     if (armed.current) {
       for (let i = 0; i < 8; i++) {
         if (crossed(s.prev, t, i * BEAT)) {
@@ -112,7 +121,7 @@ export function Silence() {
     void arm();
     setMode(m);
     modeRef.current = m;
-    st.current.t0 = performance.now() / 1000;
+    replay();
   };
 
   return (
@@ -120,6 +129,7 @@ export function Silence() {
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
+        onReplay={replay}
         caption={<span className="mon-word" key={mode}>{mode === 'pause' ? 'One second of silence, and the logo hits harder.' : 'No pause. The logo just arrives.'}</span>}
         controls={
           <Segment

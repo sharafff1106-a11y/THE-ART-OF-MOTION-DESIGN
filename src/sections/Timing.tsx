@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
@@ -29,17 +29,27 @@ const LABELS: Record<string, string> = { linear: 'Cheap', eased: 'Premium', anti
 export function Timing() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const brand = useBrand();
   const [mode, setMode] = useState('linear');
   const modeRef = useRef('linear');
   const st = useRef({ t0: performance.now() / 1000, prev: 0, prevPos: 0 });
 
+
+  // plays once when it comes into view, then rests on the last frame
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+  };
+  useEffect(() => {
+    if (visible) replay();
+  }, [visible]);
+
   useCanvasLoop(canvasRef, (ctx, w, h) => {
     const s = st.current;
     const preset = TIMING.find((p) => p.id === modeRef.current)!;
     const B = brandStore.get();
-    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const t = Math.min(performance.now() / 1000 - s.t0, CYCLE);
     const u = clamp((t - WAIT) / MOVE);
     const p = preset.ease(u);
 
@@ -107,6 +117,7 @@ export function Timing() {
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
+        onReplay={replay}
         caption={<span className="mon-word" key={mode + brand.id}>{WORDS[mode]}</span>}
         controls={
           <Segment
@@ -117,7 +128,7 @@ export function Timing() {
               void arm();
               setMode(m);
               modeRef.current = m;
-              st.current.t0 = performance.now() / 1000;
+              replay();
             }}
           />
         }

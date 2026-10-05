@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { brandStore, useBrand } from '../brand/brands';
 import { Monitor } from '../components/Monitor';
@@ -13,7 +13,7 @@ import { clamp, crossed, easeOut, lerp } from '../motion/math';
  * bouncy, or slow and controlled — is how much it seems to be worth.
  */
 type Feel = 'cheap' | 'solid' | 'lux';
-const CYCLE = 3.8;
+const END = 3.0;
 const FEEL: Record<Feel, { label: string; word: string }> = {
   cheap: { label: 'Cheap', word: 'Feels cheap.' },
   solid: { label: 'Solid', word: 'Feels solid.' },
@@ -44,16 +44,26 @@ export function Weight() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const brand = useBrand();
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const [feel, setFeel] = useState<Feel>('cheap');
   const feelRef = useRef<Feel>('cheap');
   const st = useRef({ t0: performance.now() / 1000, prev: 0, marble: null as HTMLCanvasElement | null, mw: 0, mh: 0, layer: null as HTMLCanvasElement | null });
+
+
+  // plays once when it comes into view, then rests on the last frame
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+  };
+  useEffect(() => {
+    if (visible) replay();
+  }, [visible]);
 
   useCanvasLoop(canvasRef, (ctx, w, h) => {
     const s = st.current;
     const B = brandStore.get();
     const f = feelRef.current;
-    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const t = Math.min(performance.now() / 1000 - s.t0, END);
     if (armed.current) {
       LANDS[f].forEach((at, i) => {
         if (crossed(s.prev, t, at)) {
@@ -152,6 +162,7 @@ export function Weight() {
         canvasRef={canvasRef}
         wrapRef={wrapRef}
         tone="light"
+        onReplay={replay}
         caption={<span className="mon-word" key={feel + brand.id}>{FEEL[feel].word}</span>}
         controls={
           <Segment
@@ -162,7 +173,7 @@ export function Weight() {
               void arm();
               setFeel(v);
               feelRef.current = v;
-              st.current.t0 = performance.now() / 1000;
+              replay();
             }}
           />
         }

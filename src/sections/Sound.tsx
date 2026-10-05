@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { brandStore, useBrand } from '../brand/brands';
 import { Monitor } from '../components/Monitor';
 import { Segment } from '../components/Controls';
@@ -13,14 +13,15 @@ import { drawSphere } from '../motion/sprites';
  * The client's product has its own sound: glass and mist, a can cracking
  * open, a clasp, a squeak. The pictures never change; the sound makes it real.
  */
-const CYCLE = 3.8;
 const BEATS = [0.8, 1.6, 2.4];
+/** the moment plays once, then rests on its final frame */
+const END = 3.4;
 
 export function Sound() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const brand = useBrand();
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const [on, setOn] = useState<'off' | 'on'>('off');
   const onRef = useRef(false);
   const st = useRef({
@@ -29,10 +30,28 @@ export function Sound() {
     parts: [] as { x: number; y: number; vx: number; vy: number; life: number; r: number }[],
   });
 
+  // arriving plays the moment once (silently); leaving switches the sound back off
+  useEffect(() => {
+    if (visible) {
+      st.current.t0 = performance.now() / 1000;
+      st.current.prev = 0;
+      st.current.parts.length = 0;
+    } else {
+      setOn('off');
+      onRef.current = false;
+    }
+  }, [visible]);
+
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+    st.current.parts.length = 0;
+  };
+
   useCanvasLoop(canvasRef, (ctx, w, h, dt, time) => {
     const s = st.current;
     const B = brandStore.get();
-    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const t = Math.min(performance.now() / 1000 - s.t0, END);
     const live = onRef.current && armed.current;
     const surface = h * 0.74;
     const size = h * 0.44;
@@ -61,8 +80,7 @@ export function Sound() {
     ctx.fillStyle = 'rgba(255,255,255,0.06)';
     ctx.fillRect(0, surface, w, 1);
 
-    const fade = t > CYCLE - 0.35 ? 1 - (t - (CYCLE - 0.35)) / 0.35 : 1;
-    ctx.globalAlpha = fade;
+    ctx.globalAlpha = 1;
     // the product arrives on the first beat
     const k = clamp((t - 0.25) / (BEATS[0] - 0.25));
     const y = lerp(-size, surface - size / 2, k * k);
@@ -85,17 +103,17 @@ export function Sound() {
         s.parts.splice(i, 1);
         continue;
       }
-      ctx.globalAlpha = fade * p.life * (B.id === 'fragrance' ? 0.35 : 0.7);
+      ctx.globalAlpha = p.life * (B.id === 'fragrance' ? 0.35 : 0.7);
       ctx.fillStyle = B.id === 'drink' ? 'rgba(255,240,200,1)' : '#e8e2d8';
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.r * (B.id === 'fragrance' ? 1 + (1 - p.life) * 2 : 1), 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.globalAlpha = fade;
+    ctx.globalAlpha = 1;
     // the shine on the third beat
     if (t > BEATS[2] && t < BEATS[2] + 0.9) {
       const e = (t - BEATS[2]) / 0.9;
-      ctx.globalAlpha = fade * Math.sin(e * Math.PI) * 0.9;
+      ctx.globalAlpha = Math.sin(e * Math.PI) * 0.9;
       drawSphere(ctx, 'glow', cx + size * 0.18, surface - size * 0.75, size * 0.25);
       ctx.fillStyle = '#fff';
       const sx = cx + size * 0.18;
@@ -104,7 +122,7 @@ export function Sound() {
       ctx.fillRect(sx - r, sy - 0.75, r * 2, 1.5);
       ctx.fillRect(sx - 0.75, sy - r, 1.5, r * 2);
     }
-    ctx.globalAlpha = fade * 0.9;
+    ctx.globalAlpha = 0.9;
     ctx.fillStyle = '#f3ece2';
     ctx.textAlign = 'center';
     ctx.font = serif(h * 0.08);
@@ -136,10 +154,9 @@ export function Sound() {
             onChange={(v) => {
               setOn(v);
               onRef.current = v === 'on';
-              if (v === 'on') {
-                void arm();
-                st.current.t0 = performance.now() / 1000;
-              }
+              if (v === 'on') void arm();
+              // every click replays the moment, so on/off can be compared
+              replay();
             }}
           />
         }

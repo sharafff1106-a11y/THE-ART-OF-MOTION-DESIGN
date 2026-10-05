@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { audio } from '../audio/engine';
 import { Monitor } from '../components/Monitor';
 import { Panel } from '../components/Panel';
@@ -26,14 +26,24 @@ const mixc = (a: number[], b: number[], k: number) => `rgb(${a.map((v, i) => Mat
 export function Story() {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { armed, arm } = useArmedSound(wrapRef);
+  const { armed, arm, visible } = useArmedSound(wrapRef);
   const [act, setAct] = useState(0);
   const st = useRef({ t0: performance.now() / 1000, prev: 0, act: 0 });
   const city = useMemo(() => Array.from({ length: 14 }, (_, i) => ({ x: i / 14, w: rand(0.05, 0.075), h: rand(0.18, 0.42) })), []);
 
+
+  // plays once when it comes into view, then rests on the last frame
+  const replay = () => {
+    st.current.t0 = performance.now() / 1000;
+    st.current.prev = 0;
+  };
+  useEffect(() => {
+    if (visible) replay();
+  }, [visible]);
+
   useCanvasLoop(canvasRef, (ctx, w, h, _dt, time) => {
     const s = st.current;
-    const t = (performance.now() / 1000 - s.t0) % CYCLE;
+    const t = Math.min(performance.now() / 1000 - s.t0, CYCLE);
     const a = t >= ACTS[2].at ? 2 : t >= ACTS[1].at ? 1 : 0;
     if (a !== s.act) {
       s.act = a;
@@ -119,7 +129,7 @@ export function Story() {
     }
     // the end card
     if (t > LOGO) {
-      const k = clamp((t - LOGO) / 0.6) * clamp((CYCLE - t) / 0.4);
+      const k = clamp((t - LOGO) / 0.6);
       ctx.globalAlpha = k;
       ctx.fillStyle = '#5a2a10';
       ctx.textAlign = 'center';
@@ -137,6 +147,7 @@ export function Story() {
       <Monitor
         canvasRef={canvasRef}
         wrapRef={wrapRef}
+        onReplay={replay}
         caption={
           <div className="acts">
             {ACTS.map((x, i) => (
@@ -146,6 +157,7 @@ export function Story() {
                 onClick={() => {
                   void arm();
                   st.current.t0 = performance.now() / 1000 - x.at;
+                  st.current.prev = x.at;
                 }}
               >
                 <i />
